@@ -38,6 +38,7 @@ from .stage import Stage as _Stage
 from ..configuration.system_preparation import (
     SystemPreparationConfig as _SystemPreparationConfig,
 )
+from ..configuration.slurm import SlurmConfig as _SlurmConfig
 
 
 class Leg(_SimulationRunner):
@@ -51,7 +52,7 @@ class Leg(_SimulationRunner):
         required_input_files[leg_type] = {}
         for prep_stage in _PreparationStage:
             required_input_files[leg_type][prep_stage] = [
-                "run_somd.sh",
+                # "run_somd.sh" 已移除,因为现在是动态生成的
                 "template_config.cfg",
             ] + prep_stage.get_simulation_input_files(leg_type)
 
@@ -253,6 +254,18 @@ class Leg(_SimulationRunner):
 
         # Create the Stage objects, which automatically set themselves up
         for stage_type in self.required_stages[self.leg_type]:
+            # 为每个 stage 生成 run_somd.sh
+            slurm_config = _SlurmConfig()
+            script_content = slurm_config.generate_somd_script(
+                cfg.lambda_values[self.leg_type][stage_type]
+            )
+            stage_input_dir = self.stage_input_dirs[stage_type]
+            script_path = f"{stage_input_dir}/run_somd.sh"
+            with open(script_path, "w") as f:
+                f.write(script_content)
+            _os.chmod(script_path, 0o755)
+
+            # 创建 Stage 对象
             self.stages.append(
                 _Stage(
                     stage_type=stage_type,
@@ -267,6 +280,7 @@ class Leg(_SimulationRunner):
                         "input", "output"
                     ),
                     stream_log_level=self.stream_log_level,
+                    leg_type=self.leg_type,
                 )
             )
 
@@ -718,6 +732,7 @@ class Leg(_SimulationRunner):
         config: SystemPreparationConfig
             Configuration object for the setup of the leg.
         """
+        self.sysprep_config = config
         # Get the charge of the ligand
         lig = _get_single_mol(pre_equilibrated_system, "LIG")
         lig_charge = round(lig.charge().value())
@@ -777,8 +792,11 @@ class Leg(_SimulationRunner):
             for file in _glob.glob(f"{stage_input_dir}/lambda_*"):
                 _subprocess.run(["rm", "-rf", file], check=True)
 
-            # Copy the run_somd.sh script to the stage input directory
-            _shutil.copy(f"{self.input_dir}/run_somd.sh", stage_input_dir)
+            # 生成SLURM作业脚本并写入stage_input_dir
+            slurm_config = _SlurmConfig()  # 创建新的SLURM配置实例
+            slurm_script = slurm_config.generate_somd_script(lambda_value=0.0)
+            with open(f"{stage_input_dir}/run_somd.sh", "w") as f:
+                f.write(slurm_script)
 
             # Copy the final coordinates from the ensemble equilibration stage to the stage input directory
             # and, if this is the bound stage, also copy over the restraints
@@ -854,42 +872,23 @@ class Leg(_SimulationRunner):
     def _run_slurm(
         self, sys_prep_fn: _Callable, wait: bool, run_dir: str, job_name: str
     ) -> None:
-        """
-        Run the supplied function through a slurm job. The function must be in
-        the system_prep module.
-
-        Parameters
-        ----------
-        sys_prep_fn: Callable
-            The function to run through slurm.
-        wait: bool
-            If True, the function will wait for the job to complete before returning.
-        run_dir: str
-            The directory to run the job in.
-        job_name: str
-            The name of the job.
-
-        Returns
-        -------
-        None
-        """
-        # Write the slurm script
-        # Get the header from run_somd.sh
-        header_lines = []
-        with open(f"{self.input_dir}/run_somd.sh", "r") as file:
-            for line in file.readlines():
-                if line.startswith("#SBATCH") or line.startswith("#!/bin/bash"):
-                    header_lines.append(line)
-                else:
-                    break
-
-        # Add lines to run the python function and write out
+        """Run the supplied function through a slurm job."""
+        # 使用 SlurmConfig 生成 SLURM 头部
+        slurm_config = _SlurmConfig()
+        header_lines = slurm_config.to_slurm_header().split('\n')
+        
+        # Add lines to run the python function
         header_lines.append(
             f"\npython -c 'from a3fe.run.system_prep import {sys_prep_fn.__name__}; {sys_prep_fn.__name__}()'"
         )
+        
+        # Write the slurm script
         slurm_file = f"{run_dir}/{job_name}.sh"
         with open(slurm_file, "w") as file:
-            file.writelines(header_lines)
+            file.write('\n'.join(header_lines))
+        
+        # 设置执行权限
+        _os.chmod(slurm_file, 0o755)
 
         # Submit to the virtual queue
         cmd_list = [

@@ -22,6 +22,7 @@ from .enums import LegType as _LegType
 from .enums import PreparationStage as _PreparationStage
 
 # from .enums import StageType as _StageType
+from ..configuration.slurm import SlurmConfig as _SlurmConfig
 from ..configuration.system_preparation import (
     SystemPreparationConfig as _SystemPreparationConfig,
 )
@@ -389,6 +390,7 @@ def run_ensemble_equilibration(
     None
     """
     cfg = _SystemPreparationConfig.from_pickle(input_dir, leg_type)
+    lambda_value = cfg.lambda_values[leg_type]
 
     # Load the pre-equilibrated system
     print("Loading pre-equilibrated system...")
@@ -453,6 +455,19 @@ def run_ensemble_equilibration(
         property_map={"velocity": "foo"},
     )
 
+    if cfg.slurm:
+        # 生成 SLURM 脚本
+        slurm_config = _SlurmConfig()
+        script_content = slurm_config.generate_somd_script(lambda_value)
+        
+        # 保存 SLURM 脚本到 output 目录
+        script_path = f"{output_dir}/run_somd.sh"
+        with open(script_path, "w") as f:
+            f.write(script_content)
+        
+        # 设置执行权限
+        import os
+        os.chmod(script_path, 0o755)
 
 def run_process(
     system: _BSS._SireWrappers._system.System,

@@ -20,6 +20,7 @@ from ..analyse.detect_equil import (
 from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._virtual_queue import VirtualQueue as _VirtualQueue
 from .simulation import Simulation as _Simulation
+from .enums import LegType as _LegType
 
 
 class LamWindow(_SimulationRunner):
@@ -33,6 +34,7 @@ class LamWindow(_SimulationRunner):
     runtime_attributes = _deepcopy(_SimulationRunner.runtime_attributes)
     runtime_attributes["_equilibrated"] = False
     runtime_attributes["_equil_time"] = None
+    runtime_attributes["config"] = {}
 
     def __init__(
         self,
@@ -51,6 +53,8 @@ class LamWindow(_SimulationRunner):
         output_dir: _Optional[str] = None,
         stream_log_level: int = _logging.INFO,
         update_paths: bool = True,
+        leg_type: _Optional[_LegType] = None,
+        config: _Optional[dict] = None,
     ) -> None:
         """
         Initialise a LamWindow object.
@@ -106,14 +110,25 @@ class LamWindow(_SimulationRunner):
         update_paths: bool, Optional, default: True
             If true, if the simulation runner is loaded by unpickling, then
             update_paths() is called.
+        leg_type : str, Optional, default: None
+            The leg type for the simulation.
+        config : dict, Optional, default: None
+            Configuration dictionary for the simulations
 
         Returns
         -------
         None
         """
+        # Set the leg_type first, as this is required for __str__,
+        # and therefore the super().__init__ call
+        self.leg_type = leg_type
+        
         # Set the lamdbda value first, as this is required for __str__,
         # and therefore the super().__init__ call
         self.lam = lam
+
+        # Set the config
+        self.config = config or {}  # 如果没有提供config，使用空字典
 
         super().__init__(
             base_dir=base_dir,
@@ -172,6 +187,8 @@ class LamWindow(_SimulationRunner):
                         lam=lam,
                         run_no=run_no,
                         virtual_queue=virtual_queue,
+                        leg_type=self.leg_type,
+                        config=self.config,
                         base_dir=sim_base_dir,
                         input_dir=sim_base_dir,
                         output_dir=sim_base_dir,

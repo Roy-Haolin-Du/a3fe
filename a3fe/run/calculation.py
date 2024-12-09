@@ -16,6 +16,7 @@ from .leg import Leg as _Leg
 from ..configuration.system_preparation import (
     SystemPreparationConfig as _SystemPreparationConfig,
 )
+from ..configuration.slurm import SlurmConfig as _SlurmConfig
 
 
 class Calculation(_SimulationRunner):
@@ -25,7 +26,7 @@ class Calculation(_SimulationRunner):
     """
 
     required_input_files = [
-        "run_somd.sh",
+        #"run_somd.sh",
         "protein.pdb",
         "ligand.sdf",
         "template_config.cfg",
@@ -43,6 +44,7 @@ class Calculation(_SimulationRunner):
         base_dir: _Optional[str] = None,
         stream_log_level: int = _logging.INFO,
         update_paths: bool = True,
+        slurm_config: _Optional[_SlurmConfig] = None,
     ) -> None:
         """
         Instantiate a calculation based on files in the input dir. If calculation.pkl exists in the
@@ -83,6 +85,9 @@ class Calculation(_SimulationRunner):
         update_paths: bool, Optional, default: True
             If True, if the simulation runner is loaded by unpickling, then
             update_paths() is called.
+        slurm_config: SlurmConfig, Optional, default: None
+            The Slurm configuration to use for the calculation. If None, the default
+            configuration is used.
 
         Returns
         -------
@@ -103,6 +108,7 @@ class Calculation(_SimulationRunner):
             self.runtime_constant = runtime_constant
             self.relative_simulation_cost = relative_simulation_cost
             self.setup_complete: bool = False
+            self.slurm_config = slurm_config or _SlurmConfig()
 
             # Validate the input
             self._validate_input()

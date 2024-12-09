@@ -22,13 +22,13 @@ from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._virtual_queue import Job as _Job
 from ._virtual_queue import VirtualQueue as _VirtualQueue
 from .enums import JobStatus as _JobStatus
-
-
+from .enums import LegType as _LegType
+from ..configuration.slurm import SlurmConfig as _SlurmConfig
 class Simulation(_SimulationRunner):
     """Class to store information about a single SOMD simulation."""
 
     required_input_files = [
-        "run_somd.sh",
+        #"run_somd.sh",
         "somd.cfg",
         "somd.prm7",
         "somd.rst7",
@@ -55,6 +55,8 @@ class Simulation(_SimulationRunner):
         lam: float,
         run_no: int,
         virtual_queue: _VirtualQueue,
+        leg_type: _LegType,
+        config: _Optional[dict] = None,
         base_dir: _Optional[str] = None,
         input_dir: _Optional[str] = None,
         output_dir: _Optional[str] = None,
@@ -72,6 +74,10 @@ class Simulation(_SimulationRunner):
             Index of repeat for the simulation.
         virtual_queue : VirtualQueue
             Virtual queue object to use for the simulation.
+        leg_type : LegType
+            The type of leg (BOUND or UNBOUND)
+        config : dict, Optional
+            Configuration dictionary containing simulation parameters
         base_dir : str, Optional, default: None
             Path to the base directory. If None,
             this is set to the current working directory.
@@ -96,6 +102,8 @@ class Simulation(_SimulationRunner):
         # required for __str__, and therefore the super().__init__ call
         self.lam = lam
         self.run_no = run_no
+        self.leg_type = leg_type
+        self.config = config or {}
 
         super().__init__(
             base_dir=base_dir,
@@ -312,8 +320,13 @@ class Simulation(_SimulationRunner):
         """Find out what the slurm output file will be called."""
         # Find the slurm output file
 
-        slurm_file = _os.path.join(self.input_dir, "run_somd.sh")
-        self.slurm_file_base = _get_slurm_file_base(slurm_file)
+        #slurm_file = _os.path.join(self.input_dir, "run_somd.sh")
+        #self.slurm_file_base = _get_slurm_file_base(slurm_file)
+
+        # 直接生成 SLURM 脚本
+        slurm_script = self._generate_slurm_script()
+        self.slurm_file_base = _get_slurm_file_base(slurm_script)
+
         self._logger.debug(f"Found slurm output file basename: {self.slurm_file_base}")
 
     def run(self, runtime: float = 2.5) -> None:
@@ -662,3 +675,27 @@ class Simulation(_SimulationRunner):
     @property
     def is_complete(self) -> bool:
         raise NotImplementedError()
+
+    def _generate_slurm_script(self) -> str:
+        """生成 SLURM 脚本并保存到输出目录
+        
+        Returns
+        -------
+        str
+            生成的SLURM脚本内容
+        """
+        if not hasattr(self, 'leg_type'):
+            raise AttributeError("leg_type not set")
+        if not hasattr(self, 'config'):
+            raise AttributeError("config not set")
+
+        # 生成当前lambda值的脚本
+        slurm_script = _SlurmConfig().generate_somd_script(self.lam)
+        
+        # 保存脚本到文件
+        script_path = f"{self.output_dir}/run_somd.sh"
+        with open(script_path, "w") as f:
+            f.write(slurm_script)
+        _os.chmod(script_path, 0o755)  # 设置执行权限
+        
+        return script_path  # 返回脚本文件路径

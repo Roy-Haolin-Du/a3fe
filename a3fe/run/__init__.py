@@ -6,3 +6,4 @@ from .leg import Leg
 from .simulation import Simulation
 from .stage import Stage
 from ..configuration.system_preparation import SystemPreparationConfig
+from ..configuration.slurm import SlurmConfig

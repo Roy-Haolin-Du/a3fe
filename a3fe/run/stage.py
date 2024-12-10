@@ -23,6 +23,8 @@ import numpy as _np
 import pandas as _pd
 import scipy.stats as _stats
 
+from .enums import StageType as _StageType
+from .enums import LegType as _LegType
 from ..analyse.detect_equil import (
     check_equil_multiwindow_gelman_rubin as _check_equil_multiwindow_gelman_rubin,
 )
@@ -51,7 +53,6 @@ from ..analyse.process_grads import GradientData as _GradientData
 from ..read._process_somd_files import write_simfile_option as _write_simfile_option
 from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._virtual_queue import VirtualQueue as _VirtualQueue
-from .enums import StageType as _StageType
 from .lambda_window import LamWindow as _LamWindow
 
 
@@ -74,6 +75,9 @@ class Stage(_SimulationRunner):
     # A thread-safe counter for e.g. naming unique files.
     _counter = _get_context("spawn").Value("i", 0)
 
+    stage_type: _StageType
+    leg_type: _Optional[_LegType]
+
     def __init__(
         self,
         stage_type: _StageType,
@@ -87,6 +91,7 @@ class Stage(_SimulationRunner):
         output_dir: _Optional[str] = None,
         stream_log_level: int = _logging.INFO,
         update_paths: bool = True,
+        leg_type: _Optional[_LegType] = None,
     ) -> None:
         """
         Initialise an ensemble of SOMD simulations, constituting the Stage. If Stage.pkl exists in the
@@ -130,6 +135,8 @@ class Stage(_SimulationRunner):
         update_paths: bool, Optional, default: True
             If True, if the simulation runner is loaded by unpickling, then
             update_paths() is called.
+        leg_type : LegType, Optional, default: None
+            The type of leg the stage belongs to.
 
         Returns
         -------
@@ -138,6 +145,7 @@ class Stage(_SimulationRunner):
         # Set the stage type first, as this is required for __str__,
         # and threrefore the super().__init__ call
         self.stage_type = stage_type
+        self.leg_type = leg_type
 
         super().__init__(
             base_dir=base_dir,
@@ -175,6 +183,7 @@ class Stage(_SimulationRunner):
                         lam=lam_val,
                         lam_val_weight=lam_val_weights[i],
                         virtual_queue=self.virtual_queue,
+                        leg_type=self.leg_type,
                         equil_detection=self.equil_detection,
                         runtime_constant=self.runtime_constant,
                         relative_simulation_cost=self.relative_simulation_cost,
@@ -1209,6 +1218,8 @@ class Stage(_SimulationRunner):
                 lam=lam_val,
                 lam_val_weight=lam_val_weights[i],
                 virtual_queue=self.virtual_queue,
+                leg_type=self.leg_type,
+                equil_detection=self.equil_detection,
                 runtime_constant=self.runtime_constant,
                 relative_simulation_cost=self.relative_simulation_cost,
                 ensemble_size=self.ensemble_size,

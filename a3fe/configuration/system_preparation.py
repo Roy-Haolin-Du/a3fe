@@ -18,7 +18,7 @@ from ..run.enums import LegType as _LegType
 
 # from ..run.enums import PreparationStage as _PreparationStage
 from ..run.enums import StageType as _StageType
-
+from ..configuration.slurm import SlurmConfig as _SlurmConfig
 
 class SystemPreparationConfig(_BaseModel):
     """
@@ -261,3 +261,13 @@ class SystemPreparationConfig(_BaseModel):
     def get_file_name(leg_type: _LegType) -> str:
         """Get the name of the pickle file for the configuration."""
         return f"system_preparation_config_{leg_type.name.lower()}.pkl"
+
+    def generate_slurm_script(self, lambda_value: float) -> str:
+        """生成SLURM作业脚本"""
+        slurm_config = _SlurmConfig()  # 创建SLURM配置实例
+        slurm_script = slurm_config.generate_somd_script()
+        
+        # 替换lambda值
+        slurm_script = slurm_script.replace("lam=$1", f"lam={lambda_value}")
+        
+        return slurm_script

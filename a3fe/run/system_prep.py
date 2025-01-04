@@ -22,7 +22,8 @@ from .enums import LegType as _LegType
 from .enums import PreparationStage as _PreparationStage
 
 # from .enums import StageType as _StageType
-from ..configuration.slurm import SlurmConfig as _SlurmConfig
+from ..configuration.slurm_config import SlurmConfig as _SlurmConfig
+from ..configuration.engine_config import EngineConfig as _EngineConfig
 from ..configuration.system_preparation import (
     SystemPreparationConfig as _SystemPreparationConfig,
 )
@@ -456,16 +457,25 @@ def run_ensemble_equilibration(
     )
 
     if cfg.slurm:
-        # 生成 SLURM 脚本
+        # generate slurm script
         slurm_config = _SlurmConfig()
-        script_content = slurm_config.generate_somd_script(lambda_value)
         
-        # 保存 SLURM 脚本到 output 目录
-        script_path = f"{output_dir}/run_somd.sh"
+        # generate slurm script based on the engine configuration
+        if cfg.engine.lower() == "somd":
+            script_content = slurm_config.generate_somd_script(lambda_value)
+            script_name = "run_somd.sh"
+        elif cfg.engine.lower() == "gromacs":
+            script_content = slurm_config.generate_gromacs_script(lambda_value)
+            script_name = "run_gromacs.sh"
+        else:
+            raise ValueError(f"Unsupported engine: {cfg.engine}")
+        
+        # save slurm script to output directory
+        script_path = f"{output_dir}/{script_name}"
         with open(script_path, "w") as f:
             f.write(script_content)
         
-        # 设置执行权限
+        # set execution permission
         import os
         os.chmod(script_path, 0o755)
 

@@ -21,6 +21,7 @@ from .calculation import Calculation as _Calculation
 from ..configuration.system_preparation import (
     SystemPreparationConfig as _SystemPreparationConfig,
 )
+from .enums import EngineType as _EngineType
 
 
 class CalcSet(_SimulationRunner):
@@ -39,6 +40,7 @@ class CalcSet(_SimulationRunner):
         output_dir: _Optional[str] = None,
         stream_log_level: int = _logging.INFO,
         update_paths: bool = True,
+        engine_type: _EngineType = _EngineType.SOMD,
     ) -> None:
         """
         Instantiate a calculation based on files in the input dir. If calculation.pkl exists in the
@@ -79,6 +81,7 @@ class CalcSet(_SimulationRunner):
             output_dir=output_dir,
             stream_log_level=stream_log_level,
             update_paths=update_paths,
+            engine_type=engine_type
         )
 
         if not self.loaded_from_pickle:
@@ -91,6 +94,13 @@ class CalcSet(_SimulationRunner):
                 ]
             self.calc_paths = [_os.path.abspath(directory) for directory in calc_paths]
             self._calc_args = calc_args
+            
+            # Ensure all calculations use the same engine type
+            for calc_path in self.calc_paths:
+                if calc_path in self._calc_args:
+                    self._calc_args[calc_path]["engine_type"] = self.engine_type
+                else:
+                    self._calc_args[calc_path] = {"engine_type": self.engine_type}
 
             # Check that we can load all of the calculations
             for calc in self.calcs:

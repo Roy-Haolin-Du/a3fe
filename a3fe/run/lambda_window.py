@@ -21,6 +21,12 @@ from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._virtual_queue import VirtualQueue as _VirtualQueue
 from .simulation import Simulation as _Simulation
 from .enums import LegType as _LegType
+from ..read._process_slurm_files import get_slurm_file_base as _get_slurm_file_base
+from ..read._process_somd_files import read_simfile_option as _read_simfile_option
+from ..read._process_somd_files import write_simfile_option as _write_simfile_option
+from ..read._process_gromacs_files import read_mdp_option as _read_mdp_option
+from ..read._process_gromacs_files import write_mdp_option as _write_mdp_option
+from ..run.enums import EngineType as _EngineType
 
 
 class LamWindow(_SimulationRunner):
@@ -55,6 +61,7 @@ class LamWindow(_SimulationRunner):
         update_paths: bool = True,
         leg_type: _Optional[_LegType] = None,
         config: _Optional[dict] = None,
+        engine_type: str = _EngineType.SOMD.value,
     ) -> None:
         """
         Initialise a LamWindow object.
@@ -114,6 +121,8 @@ class LamWindow(_SimulationRunner):
             The leg type for the simulation.
         config : dict, Optional, default: None
             Configuration dictionary for the simulations
+        engine_type : str, Optional, default: "somd"
+            Type of MD engine to use. Must be either "somd" or "gromacs"
 
         Returns
         -------
@@ -138,6 +147,7 @@ class LamWindow(_SimulationRunner):
             ensemble_size=ensemble_size,
             update_paths=update_paths,
             dump=False,
+            engine_type=engine_type,
         )
 
         if not self.loaded_from_pickle:
@@ -168,10 +178,16 @@ class LamWindow(_SimulationRunner):
                 run_name = "run_" + str(run_no).zfill(2)
                 sim_base_dir = _os.path.join(self.base_dir, run_name)
                 _subprocess.call(["mkdir", "-p", sim_base_dir])
+
+                # 根据引擎类型确定要链接的文件
+                if self.engine_type == _EngineType.GROMACS.value:
+                    link_extensions = (".gro", ".top", ".itp")
+                else:  # SOMD
+                    link_extensions = (".rst7", ".prm7", ".txt")
+
                 for file in _glob.glob(_os.path.join(self.input_dir, "*")):
-                    # If the file is a coordinates, topology, or restraint file,
-                    # make a symbolic link to it, otherwise copy it
-                    if file.endswith((".rst7", ".prm7", ".txt")):
+                    # 如果是需要链接的文件类型，创建符号链接，否则复制
+                    if file.endswith(link_extensions):
                         _subprocess.call(
                             [
                                 "ln",
@@ -193,6 +209,7 @@ class LamWindow(_SimulationRunner):
                         input_dir=sim_base_dir,
                         output_dir=sim_base_dir,
                         stream_log_level=stream_log_level,
+                        engine_type=self.engine_type,
                     )
                 )
 

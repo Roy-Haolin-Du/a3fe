@@ -1,6 +1,6 @@
-"""Functionality to run a single SOMD simulation."""
+"""Functionality to run SOMD and GROMACS simulations."""
 
-__all__ = ["Simulation"]
+__all__ = ["Simulation", "GromacsSimulation"]
 
 import glob as _glob
 import logging as _logging
@@ -23,7 +23,12 @@ from ._virtual_queue import Job as _Job
 from ._virtual_queue import VirtualQueue as _VirtualQueue
 from .enums import JobStatus as _JobStatus
 from .enums import LegType as _LegType
-from ..configuration.slurm import SlurmConfig as _SlurmConfig
+from .enums import StageType as _StageType
+from .enums import EngineType as _EngineType
+from ..configuration.slurm_config import SlurmConfig as _SlurmConfig
+from ..configuration.engine_config import GromacsConfig as _GromacsConfig
+from ..configuration.engine_config import EngineConfig as _EngineConfig
+
 class Simulation(_SimulationRunner):
     """Class to store information about a single SOMD simulation."""
 
@@ -56,12 +61,15 @@ class Simulation(_SimulationRunner):
         run_no: int,
         virtual_queue: _VirtualQueue,
         leg_type: _LegType,
+        stage_type: _Optional[_StageType] = None,
+        engine_config: _Optional[_EngineConfig] = None,
         config: _Optional[dict] = None,
         base_dir: _Optional[str] = None,
         input_dir: _Optional[str] = None,
         output_dir: _Optional[str] = None,
         stream_log_level: int = _logging.INFO,
         update_paths: bool = True,
+        engine_type: str = "somd",
     ) -> None:
         """
         Initialise a Simulation object.
@@ -75,9 +83,13 @@ class Simulation(_SimulationRunner):
         virtual_queue : VirtualQueue
             Virtual queue object to use for the simulation.
         leg_type : LegType
-            The type of leg (BOUND or UNBOUND)
-        config : dict, Optional
-            Configuration dictionary containing simulation parameters
+            Type of leg for the simulation.
+        stage_type : StageType
+            Type of stage for the simulation.
+        engine_config : EngineConfig, Optional, default: None
+            Engine configuration for the simulation.
+        config : dict, Optional, default: None
+            Configuration for the simulation.
         base_dir : str, Optional, default: None
             Path to the base directory. If None,
             this is set to the current working directory.
@@ -93,6 +105,8 @@ class Simulation(_SimulationRunner):
         update_paths: bool, Optional, default: True
             If True, if the simulation runner is loaded by unpickling, then
             update_paths() is called.
+        engine_type : str, Optional, default: "somd"
+            Type of engine to use for the simulation.
 
         Returns
         -------
@@ -112,6 +126,7 @@ class Simulation(_SimulationRunner):
             stream_log_level=stream_log_level,
             update_paths=update_paths,
             dump=False,
+            engine_type=engine_type
         )
 
         if not self.loaded_from_pickle:
@@ -323,7 +338,7 @@ class Simulation(_SimulationRunner):
         #slurm_file = _os.path.join(self.input_dir, "run_somd.sh")
         #self.slurm_file_base = _get_slurm_file_base(slurm_file)
 
-        # 直接生成 SLURM 脚本
+        # directly generate SLURM script
         slurm_script = self._generate_slurm_script()
         self.slurm_file_base = _get_slurm_file_base(slurm_script)
 
@@ -357,14 +372,17 @@ class Simulation(_SimulationRunner):
         self._set_n_cycles(n_cycles)
 
         # Run SOMD - note that command excludes sbatch as this is added by the virtual queue
+        engine_type = "gromacs" if isinstance(self.engine_config, _GromacsConfig) else "somd"
+        script_name = f"run_{engine_type}.sh"
         cmd_list = [
             "--chdir",
-            f"{self.output_dir}",
-            f"{self.input_dir}/run_somd.sh",
+            f"{self.output_dir}/lambda_{self.lam:.4f}",
+            f"{self.input_dir}/run_gromacs.sh",
             f"{self.lam}",
         ]
         self.job = self.virtual_queue.submit(
-            command_list=cmd_list, slurm_file_base=self.slurm_file_base
+            command_list=cmd_list,
+            slurm_file_base=self.slurm_file_base
         )
         self._logger.info(f"Submitted with job {self.job}")
 
@@ -677,25 +695,132 @@ class Simulation(_SimulationRunner):
         raise NotImplementedError()
 
     def _generate_slurm_script(self) -> str:
-        """生成 SLURM 脚本并保存到输出目录
+        """generate SLURM script and save to output directory
         
         Returns
         -------
         str
-            生成的SLURM脚本内容
+            generated SLURM script
         """
         if not hasattr(self, 'leg_type'):
             raise AttributeError("leg_type not set")
         if not hasattr(self, 'config'):
             raise AttributeError("config not set")
 
-        # 生成当前lambda值的脚本
+        # generate script for current lambda value
         slurm_script = _SlurmConfig().generate_somd_script(self.lam)
         
-        # 保存脚本到文件
+        # save script to file
         script_path = f"{self.output_dir}/run_somd.sh"
         with open(script_path, "w") as f:
             f.write(slurm_script)
-        _os.chmod(script_path, 0o755)  # 设置执行权限
+        _os.chmod(script_path, 0o755)  # set execution permission
         
-        return script_path  # 返回脚本文件路径
+        return script_path  # return script file path
+
+
+class GromacsSimulation(Simulation):
+    """Class to store information about a single GROMACS simulation."""
+
+    required_input_files = ["gromacs.mdp", "gromacs.top", "gromacs.gro"]
+
+    def __init__(
+        self,
+        lam: float,
+        run_no: int,
+        virtual_queue: _VirtualQueue,
+        leg_type: _LegType,
+        stage_type: _StageType,
+        base_dir: _Optional[str] = None,
+        input_dir: _Optional[str] = None,
+        output_dir: _Optional[str] = None,
+        stream_log_level: int = _logging.INFO,
+        update_paths: bool = True,
+        engine_config: _Optional[_GromacsConfig] = None,
+    ) -> None:
+        """Initialize a GROMACS simulation."""
+        super().__init__(
+            lam=lam,
+            run_no=run_no,
+            virtual_queue=virtual_queue,
+            leg_type=leg_type,
+            stage_type=stage_type,
+            base_dir=base_dir,
+            input_dir=input_dir,
+            output_dir=output_dir,
+            stream_log_level=stream_log_level,
+            update_paths=update_paths,
+            engine_type="gromacs",
+            engine_config=engine_config or _GromacsConfig()
+        )
+
+        if not self.loaded_from_pickle:
+            self._prepare_input()
+
+    def _prepare_input(self) -> None:
+        """prepare GROMACS input files"""
+        # copy required files
+        for file in self.required_input_files:
+            src = f"{self.input_dir}/{file}"
+            dst = f"{self.base_dir}/{file}"
+            if not _os.path.exists(dst):
+                _shutil.copy2(src, dst)
+
+        # set lambda values according to stage_type
+        if self.stage_type == _StageType.RESTRAIN:
+            lambda_values = {
+                'bonded': [self.lam],
+                'coul': [0.0],
+                'vdw': [0.0]
+            }
+        elif self.stage_type == _StageType.DISCHARGE:
+            lambda_values = {
+                'bonded': [1.0],
+                'coul': [self.lam],
+                'vdw': [0.0]
+            }
+        else:  # VANISH
+            lambda_values = {
+                'bonded': [1.0],
+                'coul': [1.0],
+                'vdw': [self.lam]
+            }
+
+        # generate MDP file
+        if isinstance(self.engine_config, _GromacsConfig):
+            self.engine_config.generate_mdp(lambda_values, self.base_dir)
+
+    def run(self) -> None:
+        """run GROMACS simulation"""
+        if self.running:
+            self._logger.info(f"{self} already running")
+            return
+
+        if not isinstance(self.engine_config, _GromacsConfig):
+            raise ValueError("Invalid engine configuration for GROMACS simulation")
+
+        cmd = self.engine_config.make_run_command(self.lam)
+        cmd_list = [
+            "--chdir",
+            self.base_dir,
+            "bash",
+            "-c",
+            cmd
+        ]
+        
+        self.job = self.virtual_queue.submit(
+            command_list=cmd_list,
+            slurm_file_base=self.slurm_file_base
+        )
+        self._logger.info(f"Submitted GROMACS job {self.job}")
+
+    def _validate_input(self) -> None:
+        """validate input files"""
+        if not _os.path.isdir(self.input_dir):
+            raise FileNotFoundError(f"Input directory {self.input_dir} does not exist.")
+
+        for file in self.required_input_files:
+            if not _os.path.isfile(_os.path.join(self.input_dir, file)):
+                raise FileNotFoundError(
+                    f"Required input file {file} not found in {self.input_dir}"
+                )

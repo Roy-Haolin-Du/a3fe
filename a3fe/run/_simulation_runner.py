@@ -26,6 +26,7 @@ from ..analyse.exceptions import AnalysisError as _AnalysisError
 from ..analyse.plot import plot_convergence as _plot_convergence
 from ..analyse.plot import plot_sq_sem_convergence as _plot_sq_sem_convergence
 from ._logging_formatters import _A3feFileFormatter, _A3feStreamFormatter
+from .enums import EngineType as _EngineType
 
 
 class SimulationRunner(ABC):
@@ -44,7 +45,21 @@ class SimulationRunner(ABC):
     # Create a dict of attributes which can be modified by algorithms when
     # running the simulation, but which should be reset if the user wants to
     # re-run. This takes the form {attribute_name: reset_value}
-    runtime_attributes = {}
+    runtime_attributes = {
+        "engine_type": _EngineType.SOMD,  # default use SOMD
+    }
+
+    # add engine type related attributes
+    supported_engines = {
+        _EngineType.SOMD: {
+            "required_files": ["template_config.cfg"],
+            "run_script": "run_somd.sh"
+        },
+        _EngineType.GROMACS: {
+            "required_files": ["gromacs.mdp", "gromacs.top", "gromacs.gro"],
+            "run_script": "run_gmx.sh"
+        }
+    }
 
     def __init__(
         self,
@@ -56,6 +71,7 @@ class SimulationRunner(ABC):
         ensemble_size: int = 5,
         update_paths: bool = True,
         dump: bool = True,
+        engine_type: _EngineType = _EngineType.SOMD,
     ) -> None:
         """
         base_dir : str, Optional, default: None
@@ -83,6 +99,8 @@ class SimulationRunner(ABC):
             update_paths() is called.
         dump: bool, Optional, default: True
             If True, the state of the simulation runner is saved to a pickle file.
+        engine_type : _EngineType, Optional, default: _EngineType.SOMD
+            MD engine type, support SOMD or GROMACS
         """
         # Set up the directories (which may be overwritten if the
         # simulation runner is subsequently loaded from a pickle file)
@@ -145,6 +163,9 @@ class SimulationRunner(ABC):
             # Save state
             if dump:
                 self._dump()
+
+        if not self.loaded_from_pickle:
+            self.engine_type = engine_type
 
     def _set_up_logging(self, null: bool = False) -> None:
         """
@@ -1044,3 +1065,18 @@ class SimulationRunner(ABC):
 
         # Record that the object was loaded from a pickle file
         self.loaded_from_pickle = True
+
+    def _validate_engine(self) -> None:
+        """验证引擎配置"""
+        if self.engine_type not in self.supported_engines:
+            raise ValueError(f"Unsupported engine type: {self.engine_type}")
+
+        # 检查必需文件
+        if hasattr(self, "input_dir"):
+            for required_file in self.supported_engines[self.engine_type]["required_files"]:
+                file_path = _os.path.join(self.input_dir, required_file)
+                if not _os.path.exists(file_path):
+                    raise FileNotFoundError(
+                        f"Required file {required_file} not found for {self.engine_type}"
+                    )
+

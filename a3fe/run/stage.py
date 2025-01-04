@@ -54,13 +54,13 @@ from ..read._process_somd_files import write_simfile_option as _write_simfile_op
 from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._virtual_queue import VirtualQueue as _VirtualQueue
 from .lambda_window import LamWindow as _LamWindow
+from ..configuration.system_preparation import SystemPreparationConfig as _SystemPreparationConfig
+from .enums import EngineType as _EngineType
 
 
 class Stage(_SimulationRunner):
-    """
-    Class to hold and manipulate an ensemble of SOMD simulations for a
-    single stage of a calculation.
-    """
+    """Class to hold and manipulate an ensemble of simulations for a
+    single stage of a calculation."""
 
     # Files to be cleaned by self.clean()
     run_files = _SimulationRunner.run_files + [
@@ -92,6 +92,7 @@ class Stage(_SimulationRunner):
         stream_log_level: int = _logging.INFO,
         update_paths: bool = True,
         leg_type: _Optional[_LegType] = None,
+        engine_type: _Optional[_EngineType] = None,
     ) -> None:
         """
         Initialise an ensemble of SOMD simulations, constituting the Stage. If Stage.pkl exists in the
@@ -137,6 +138,8 @@ class Stage(_SimulationRunner):
             update_paths() is called.
         leg_type : LegType, Optional, default: None
             The type of leg the stage belongs to.
+        engine_type : str, Optional, default: "somd"
+            Type of MD engine to use. Must be either "somd" or "gromacs"
 
         Returns
         -------
@@ -155,13 +158,40 @@ class Stage(_SimulationRunner):
             ensemble_size=ensemble_size,
             update_paths=update_paths,
             dump=False,
+            engine_type=engine_type,
         )
 
         if not self.loaded_from_pickle:
+            # 获取lambda值
             if lambda_values is not None:
                 self.lam_vals = lambda_values
             else:
-                self.lam_vals = self._get_lam_vals()
+                # get lambda values from the configuration
+                config = _SystemPreparationConfig()
+                self.lam_vals = config.get_lambda_values(leg_type, stage_type)
+
+            # create simulations for each lambda value
+            for lam in self.lam_vals:
+                for run_no in range(1, ensemble_size + 1):
+                    sim = _Simulation(
+                        lam=lam,
+                        run_no=run_no,
+                        virtual_queue=self.virtual_queue,
+                        leg_type=leg_type,
+                        stage_type=stage_type,
+                        base_dir=f"{self.base_dir}/lambda_{lam:.4f}/run_{run_no}",
+                        input_dir=self.input_dir,
+                        stream_log_level=stream_log_level,
+                        engine_type=self.engine_type
+                    )
+                    self.simulations.append(sim)
+
+            # create input and output directories
+            for lam in self.lam_vals:
+                lam_dir = f"lambda_{lam:.4f}"
+                _os.makedirs(f"{self.input_dir}/{lam_dir}", exist_ok=True)
+                _os.makedirs(f"{self.output_dir}/{lam_dir}", exist_ok=True)
+
             self.equil_detection = equil_detection
             self.runtime_constant = runtime_constant
             self.relative_simulation_cost = relative_simulation_cost
@@ -191,6 +221,7 @@ class Stage(_SimulationRunner):
                         base_dir=lam_base_dir,
                         input_dir=self.input_dir,
                         stream_log_level=self.stream_log_level,
+                        engine_type=self.engine_type,
                     )
                 )
 
@@ -1226,6 +1257,7 @@ class Stage(_SimulationRunner):
                 base_dir=lam_base_dir,
                 input_dir=self.input_dir,
                 stream_log_level=self.stream_log_level,
+                engine_type=self.engine_type,
             )
             # Overwrite the default equilibration detection algorithm
             new_lam_win.check_equil = old_lam_vals_attrs["check_equil"]
@@ -1266,3 +1298,4 @@ class StageContextManager:
     def __exit__(self, exc_type, exc_value, traceback):
         for stage in self.stages:
             stage.kill()
+

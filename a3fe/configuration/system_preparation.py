@@ -4,9 +4,11 @@ __all__ = ["SystemPreparationConfig"]
 
 # import pathlib as _pathlib
 import pickle as _pkl
+from typing import Dict, Union, List, Any
+import pandas as pd
 
 # import warnings as _warnings
-# from typing import Optional as _Optional
+from typing import Optional as _Optional
 
 # import BioSimSpace.Sandpit.Exscientia as _BSS
 from pydantic import BaseModel as _BaseModel
@@ -17,8 +19,8 @@ from pydantic import Field as _Field
 from ..run.enums import LegType as _LegType
 
 # from ..run.enums import PreparationStage as _PreparationStage
-from ..run.enums import StageType as _StageType
-from ..configuration.slurm import SlurmConfig as _SlurmConfig
+from ..run.enums import StageType as _StageType, EngineType as _EngineType
+from .engine_config import EngineConfig as _EngineConfig
 
 class SystemPreparationConfig(_BaseModel):
     """
@@ -59,6 +61,8 @@ class SystemPreparationConfig(_BaseModel):
         , the restraints generated for the first repeat are used. This allows meaningful
         comparison between repeats for the bound leg. If False, the unique restraints are
         generated for each repeat.
+    engine_type: str
+        Type of MD engine to use (somd or gromacs)
     """
 
     slurm: bool = _Field(True)
@@ -85,91 +89,55 @@ class SystemPreparationConfig(_BaseModel):
         description="Whether to use the same restraints for all repeats of the bound leg. Note "
         "that this should be used if you plan to run adaptively.",
     )
-    lambda_values: dict = {
-        _LegType.BOUND: {
-            _StageType.RESTRAIN: [0.000, 0.125, 0.250, 0.375, 0.500, 1.000],
-            _StageType.DISCHARGE: [
-                0.000,
-                0.143,
-                0.286,
-                0.429,
-                0.571,
-                0.714,
-                0.857,
-                1.000,
-            ],
-            _StageType.VANISH: [
-                0.000,
-                0.025,
-                0.050,
-                0.075,
-                0.100,
-                0.125,
-                0.150,
-                0.175,
-                0.200,
-                0.225,
-                0.250,
-                0.275,
-                0.300,
-                0.325,
-                0.350,
-                0.375,
-                0.400,
-                0.425,
-                0.450,
-                0.475,
-                0.500,
-                0.525,
-                0.550,
-                0.575,
-                0.600,
-                0.625,
-                0.650,
-                0.675,
-                0.700,
-                0.725,
-                0.750,
-                0.800,
-                0.850,
-                0.900,
-                0.950,
-                1.000,
-            ],
+    engine_type: str = _Field(
+        "somd",
+        description="Type of MD engine to use (somd or gromacs)"
+    )
+
+    lambda_values: Dict[str, Dict] = _Field(
+        default={
+            "somd": {
+                _LegType.BOUND: {
+                    _StageType.RESTRAIN: [0.000, 0.125, 0.250, 0.375, 0.500, 1.000],
+                    _StageType.DISCHARGE: [
+                        0.000, 0.143, 0.286, 0.429, 0.571, 0.714, 0.857, 1.000
+                    ],
+                    _StageType.VANISH: [
+                        0.000, 0.025, 0.050, 0.075, 0.100, 0.125, 0.150, 0.175,
+                        0.200, 0.225, 0.250, 0.275, 0.300, 0.325, 0.350, 0.375,
+                        0.400, 0.425, 0.450, 0.475, 0.500, 0.525, 0.550, 0.575,
+                        0.600, 0.625, 0.650, 0.675, 0.700, 0.725, 0.750, 0.800,
+                        0.850, 0.900, 0.950, 1.000
+                    ],
+                },
+                _LegType.FREE: {
+                    _StageType.DISCHARGE: [
+                        0.000, 0.143, 0.286, 0.429, 0.571, 0.714, 0.857, 1.000
+                    ],
+                    _StageType.VANISH: [
+                        0.000, 0.028, 0.056, 0.111, 0.167, 0.222, 0.278, 0.333,
+                        0.389, 0.444, 0.500, 0.556, 0.611, 0.667, 0.722, 0.778,
+                        0.889, 1.000
+                    ],
+                },
+            },
+            "gromacs": {
+                _LegType.BOUND: {
+                    _StageType.RESTRAIN: [0.0, 0.01, 0.025, 0.05, 0.075, 0.1, 0.2, 
+                                        0.35, 0.5, 0.75, 1.0],
+                    _StageType.DISCHARGE: [0.0, 0.16, 0.33, 0.5, 0.67, 0.83, 1.0],
+                    _StageType.VANISH: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.55, 0.6, 0.65, 
+                                      0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0]
+                },
+                _LegType.FREE: {
+                    _StageType.DISCHARGE: [0.0, 0.16, 0.33, 0.5, 0.67, 0.83, 1.0],
+                    _StageType.VANISH: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.55, 0.6, 0.65, 
+                                      0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0]
+                }
+            }
         },
-        _LegType.FREE: {
-            _StageType.DISCHARGE: [
-                0.000,
-                0.143,
-                0.286,
-                0.429,
-                0.571,
-                0.714,
-                0.857,
-                1.000,
-            ],
-            _StageType.VANISH: [
-                0.000,
-                0.028,
-                0.056,
-                0.111,
-                0.167,
-                0.222,
-                0.278,
-                0.333,
-                0.389,
-                0.444,
-                0.500,
-                0.556,
-                0.611,
-                0.667,
-                0.722,
-                0.778,
-                0.889,
-                1.000,
-            ],
-        },
-    }
+        description="Lambda values for different engines and leg types"
+    )
 
     class Config:
         """
@@ -263,11 +231,20 @@ class SystemPreparationConfig(_BaseModel):
         return f"system_preparation_config_{leg_type.name.lower()}.pkl"
 
     def generate_slurm_script(self, lambda_value: float) -> str:
-        """生成SLURM作业脚本"""
-        slurm_config = _SlurmConfig()  # 创建SLURM配置实例
-        slurm_script = slurm_config.generate_somd_script()
-        
-        # 替换lambda值
-        slurm_script = slurm_script.replace("lam=$1", f"lam={lambda_value}")
-        
-        return slurm_script
+        """generate slurm script"""
+        if not self.engine_config:
+            raise ValueError("Engine configuration not set")
+            
+        slurm_config = _SlurmConfig()
+        return slurm_config.generate_script(self.engine_config, lambda_value)
+
+    def get_lambda_values(
+        self, 
+        leg_type: _LegType, 
+        stage_type: _Optional[_StageType] = None
+    ) -> Union[Dict, List[float]]:
+        """get lambda values for specified leg type and stage"""
+        values = self.lambda_values[self.engine_type][leg_type]
+        if stage_type is not None:
+            return values[stage_type]
+        return values

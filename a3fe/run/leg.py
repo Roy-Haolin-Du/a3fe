@@ -1,3 +1,4 @@
+#leg.py
 """Functionality for managing legs of the calculation."""
 
 __all__ = ["Leg"]
@@ -14,10 +15,12 @@ from typing import Dict as _Dict
 from typing import List as _List
 from typing import Optional as _Optional
 from typing import Tuple as _Tuple
+from typing import Union as _Union
 
 import BioSimSpace.Sandpit.Exscientia as _BSS
 import numpy as _np
 import pandas as _pd
+import pickle as _pkl
 
 from ..analyse.plot import plot_convergence as _plot_convergence
 from ..analyse.plot import plot_rmsds as _plot_rmsds
@@ -38,8 +41,16 @@ from .stage import Stage as _Stage
 from ..configuration.system_preparation import (
     SystemPreparationConfig as _SystemPreparationConfig,
 )
-from ..configuration.slurm import SlurmConfig as _SlurmConfig
+from ..configuration.slurm_config import SlurmConfig as _SlurmConfig
+from .enums import EngineType as _EngineType
 
+from ..read._process_somd_files import read_simfile_option as _read_somd_simfile
+from ..read._process_somd_files import write_simfile_option as _write_somd_simfile
+from ..read._process_gromacs_files import read_mdp_option as _read_gromacs_mdp
+from ..read._process_gromacs_files import write_mdp_option as _write_gromacs_mdp
+
+_read_simfile_option = _read_somd_simfile
+_write_simfile_option = _write_somd_simfile
 
 class Leg(_SimulationRunner):
     """
@@ -47,14 +58,23 @@ class Leg(_SimulationRunner):
     """
 
     # Required input files for each leg type and preparation stage.
-    required_input_files = {}
-    for leg_type in _LegType:
-        required_input_files[leg_type] = {}
-        for prep_stage in _PreparationStage:
-            required_input_files[leg_type][prep_stage] = [
-                # "run_somd.sh" 已移除,因为现在是动态生成的
-                "template_config.cfg",
-            ] + prep_stage.get_simulation_input_files(leg_type)
+    required_input_files = {
+        _EngineType.SOMD: {},
+        _EngineType.GROMACS: {}
+    }
+    
+    for engine_type in _EngineType:
+        for leg_type in _LegType:
+            required_input_files[engine_type][leg_type] = {}
+            for prep_stage in _PreparationStage:
+                if engine_type == _EngineType.SOMD:
+                    required_input_files[engine_type][leg_type][prep_stage] = [
+                        "template_config.cfg",
+                    ] + prep_stage.get_simulation_input_files(leg_type)
+                else:  # GROMACS
+                    required_input_files[engine_type][leg_type][prep_stage] = (
+                        prep_stage.get_simulation_input_files(leg_type)
+                    )
 
     required_stages = {
         _LegType.BOUND: [_StageType.RESTRAIN, _StageType.DISCHARGE, _StageType.VANISH],
@@ -72,6 +92,7 @@ class Leg(_SimulationRunner):
         input_dir: _Optional[str] = None,
         stream_log_level: int = _logging.INFO,
         update_paths: bool = True,
+        engine_type: _EngineType = _EngineType.SOMD,
     ) -> None:
         """
         Instantiate a calculation based on files in the input dir. If leg.pkl exists in the
@@ -109,6 +130,8 @@ class Leg(_SimulationRunner):
         update_paths: bool, optional, default: True
             if true, if the simulation runner is loaded by unpickling, then
             update_paths() is called.
+        engine_type : str, Optional, default: "somd"
+            Type of MD engine to use. Must be either "somd" or "gromacs"
 
         Returns
         -------
@@ -117,6 +140,15 @@ class Leg(_SimulationRunner):
         # Set the leg type, as this is needed in the superclass constructor
         self.leg_type = leg_type
 
+        # select the function to use based on the engine type
+        global _read_simfile_option, _write_simfile_option
+        if engine_type == _EngineType.SOMD.value:
+            _read_simfile_option = _read_somd_simfile
+            _write_simfile_option = _write_somd_simfile
+        else:  # gromacs
+            _read_simfile_option = _read_gromacs_mdp
+            _write_simfile_option = _write_gromacs_mdp
+            
         super().__init__(
             base_dir=base_dir,
             input_dir=input_dir,
@@ -124,6 +156,7 @@ class Leg(_SimulationRunner):
             ensemble_size=ensemble_size,
             update_paths=update_paths,
             dump=False,
+            engine_type=engine_type,
         )
 
         if not self.loaded_from_pickle:
@@ -173,7 +206,7 @@ class Leg(_SimulationRunner):
         # Check backwards, as we care about the most advanced preparation stage
         for prep_stage in reversed(_PreparationStage):
             files_absent = False
-            for file in Leg.required_input_files[self.leg_type][prep_stage]:
+            for file in Leg.required_input_files[self.engine_type][self.leg_type][prep_stage]:
                 if not _os.path.isfile(f"{self.input_dir}/{file}"):
                     files_absent = True
             # We have the required files for this prep stage, and this is the most
@@ -187,7 +220,7 @@ class Leg(_SimulationRunner):
         # We didn't find all required files for any of the prep stages
         raise ValueError(
             f"Could not find all required input files for leg type {self.leg_type.name} for "
-            f"any preparation stage. Required files are: {Leg.required_input_files[self.leg_type]}"
+            f"any preparation stage. Required files are: {Leg.required_input_files[self.engine_type][self.leg_type]}"
         )
 
     def setup(
@@ -207,18 +240,39 @@ class Leg(_SimulationRunner):
 
         Parameters
         ----------
-        sysprep_config: Optional[SystemPreparationConfig], default: None
-            Configuration object for the setup of the leg. If None, the default configuration
-            is used.
+        sysprep_config: Optional[Union[SystemPreparationConfig, dict]], default: None
+            Configuration object or dictionary for the setup of the leg. 
+            If None, the default configuration is used.
         """
         self._logger.info("Setting up leg...")
 
         # First, we need to save the config to the input directory so that this can be reloaded
         # by the slurm jobs.
-        cfg = (
-            sysprep_config if sysprep_config is not None else _SystemPreparationConfig()
-        )
-        cfg.save_pickle(self.input_dir, self.leg_type)
+        if isinstance(sysprep_config, dict):
+            # ensure all keys are strings
+            config_dict = {}
+            for k, v in sysprep_config.items():
+                if k == "lambda_values":
+                    # use the default lambda values defined in SystemPreparationConfig
+                    config_dict[k] = _SystemPreparationConfig().lambda_values
+                else:
+                    # ensure other configuration items are string keys
+                    config_dict[str(k)] = v
+            
+            # set the default engine type
+            if "engine_type" not in config_dict:
+                config_dict["engine_type"] = self.engine_type
+                
+            cfg = _SystemPreparationConfig(**config_dict)
+        else:
+            cfg = (
+                sysprep_config if sysprep_config is not None else _SystemPreparationConfig()
+            )
+
+        # save the configuration as a pickle file
+        cfg_path = _os.path.join(self.input_dir, f"sysprep_config_{self.leg_type.name.lower()}.pkl")
+        with open(cfg_path, "wb") as f:
+            _pkl.dump(cfg, f)
 
         # Create input directories, parameterise, solvate, minimise, heat and preequil, all
         # depending on the input files present.
@@ -254,18 +308,26 @@ class Leg(_SimulationRunner):
 
         # Create the Stage objects, which automatically set themselves up
         for stage_type in self.required_stages[self.leg_type]:
-            # 为每个 stage 生成 run_somd.sh
+            # generate different run scripts based on the engine type
             slurm_config = _SlurmConfig()
-            script_content = slurm_config.generate_somd_script(
-                cfg.lambda_values[self.leg_type][stage_type]
-            )
+            if self.engine_type == _EngineType.SOMD.value:
+                script_content = slurm_config.generate_somd_script(
+                    cfg.lambda_values[self.leg_type][stage_type]
+                )
+                script_name = "run_somd.sh"
+            else:  # gromacs
+                script_content = slurm_config.generate_gromacs_script(
+                    cfg.lambda_values[self.leg_type][stage_type]
+                )
+                script_name = "run_gromacs.sh"
+
             stage_input_dir = self.stage_input_dirs[stage_type]
-            script_path = f"{stage_input_dir}/run_somd.sh"
+            script_path = f"{stage_input_dir}/{script_name}"
             with open(script_path, "w") as f:
                 f.write(script_content)
             _os.chmod(script_path, 0o755)
 
-            # 创建 Stage 对象
+            # create Stage object, passing engine_type
             self.stages.append(
                 _Stage(
                     stage_type=stage_type,
@@ -281,6 +343,7 @@ class Leg(_SimulationRunner):
                     ),
                     stream_log_level=self.stream_log_level,
                     leg_type=self.leg_type,
+                    engine_type=self.engine_type,
                 )
             )
 
@@ -718,7 +781,7 @@ class Leg(_SimulationRunner):
 
     def write_input_files(
         self,
-        pre_equilibrated_system: _BSS._SireWrappers._system.System,  # type: ignore
+        pre_equilibrated_system: _BSS._SireWrappers._system.System,
         config: _SystemPreparationConfig,
     ) -> None:
         """
@@ -792,11 +855,15 @@ class Leg(_SimulationRunner):
             for file in _glob.glob(f"{stage_input_dir}/lambda_*"):
                 _subprocess.run(["rm", "-rf", file], check=True)
 
-            # 生成SLURM作业脚本并写入stage_input_dir
-            slurm_config = _SlurmConfig()  # 创建新的SLURM配置实例
-            slurm_script = slurm_config.generate_somd_script(lambda_value=0.0)
-            with open(f"{stage_input_dir}/run_somd.sh", "w") as f:
-                f.write(slurm_script)
+            # 根据引擎类型生成不同的运行脚本
+            slurm_config = _SlurmConfig()
+            script_name = "run_gmx.sh" if self.engine_type == _EngineType.GROMACS else "run_somd.sh"
+            script_content = slurm_config.generate_script(self.engine_type, config.lambda_values)
+            
+            script_path = f"{stage_input_dir}/{script_name}"
+            with open(script_path, "w") as f:
+                f.write(script_content)
+            _os.chmod(script_path, 0o755)
 
             # Copy the final coordinates from the ensemble equilibration stage to the stage input directory
             # and, if this is the bound stage, also copy over the restraints

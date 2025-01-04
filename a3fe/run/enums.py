@@ -8,6 +8,7 @@ __all__ = [
     "StageType",
     "LegType",
     "PreparationStage",
+    "EngineType",
 ]
 
 
@@ -88,3 +89,11 @@ class PreparationStage(_Enum):
                 f"{leg_type.name.lower()}{self.file_suffix}.{file_type}"
                 for file_type in ["prm7", "rst7"]
             ]
+
+
+class EngineType(_Enum):
+    """
+    Supported MD engine types
+    """
+    SOMD = "somd"
+    GROMACS = "gromacs"

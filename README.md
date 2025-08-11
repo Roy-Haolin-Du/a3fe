@@ -60,7 +60,7 @@ calc.save()
 
 ### Copyright
 
-Copyright (c) 2023, Finlay Clark
+Copyright (c) 2025, Finlay Clark and Roy Haolin Du
 
 
 #### Acknowledgements

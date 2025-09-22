@@ -169,6 +169,10 @@ class Calculation(_SimulationRunner):
                 )
             self._prep_stage = min_prep_stage
 
+        # Lazy initialization: if not set, infer from input files
+        if not hasattr(self, "_prep_stage"):
+            self._validate_input(self.engine_type.system_prep_config())
+
         return self._prep_stage
 
     def setup(

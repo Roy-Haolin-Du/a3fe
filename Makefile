@@ -4,7 +4,7 @@ PACKAGE_DIR  := a3fe
 # Only need slurm, which is linux only
 CONDA_ENV_RUN = conda run --no-capture-output --name $(PACKAGE_NAME)
 
-TEST_ARGS := -v --cov=$(PACKAGE_NAME) --cov-report=term --cov-report=xml --junitxml=unit.xml --color=yes
+TEST_ARGS := -v --cov=$(PACKAGE_DIR) --cov-report=term --cov-report=xml --junitxml=unit.xml --color=yes
 
 .PHONY: env env-dev env-ci lint format test test-integration docs-build docs clean
 

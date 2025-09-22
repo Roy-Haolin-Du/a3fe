@@ -1148,11 +1148,6 @@ class Stage(_SimulationRunner):
         base_dir = _pathlib.Path(self.output_dir).parent.resolve()
         _os.rename(self.output_dir, _os.path.join(base_dir, save_name))
 
-    def set_simfile_option(self, option: str, value: str) -> None:
-        setattr(self.engine_config, option, value)
-        self.engine_config.get_somd_config(self.input_dir)
-        super().set_simfile_option(option, value)
-
     def wait(self) -> None:
         """Wait for the stage to finish running."""
         # Override the base class method so that we can update the

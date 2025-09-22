@@ -26,6 +26,11 @@ from abc import ABC as _ABC, abstractmethod as _abstractmethod
 class _EngineConfig(_BaseModel, _ABC):
     """Base class for engine runner configurations."""
 
+    model_config = {
+        "populate_by_name": True,
+        "validate_assignment": True,
+    }
+
     @staticmethod
     @_abstractmethod
     def get_file_name() -> str:

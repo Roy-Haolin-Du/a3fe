@@ -1,7 +1,9 @@
 """Test the functionality of updating engine_config (SomdConfig) options."""
 
-from a3fe.run._simulation_runner import SimulationRunner
 from a3fe import SomdConfig
+from a3fe.run._simulation_runner import SimulationRunner
+import pytest
+from pydantic import ValidationError
 
 
 class MockSimulationRunner(SimulationRunner):
@@ -17,6 +19,13 @@ def test_update_engine_config_option():
     runner = MockSimulationRunner()
     runner.update_engine_config_option("runtime", 99)
     assert runner.engine_config.runtime == 99
+
+
+def test_incorrect_engine_config_mod():
+    """Test that modifying an incorrect engine config raises an error."""
+    runner = MockSimulationRunner()
+    with pytest.raises(ValidationError):
+        runner.update_engine_config_option("cutoff_distance", -8)
 
 
 def test_update_engine_config_option_with_sub_runners():

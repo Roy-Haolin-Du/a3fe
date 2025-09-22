@@ -3,6 +3,7 @@
 from tempfile import TemporaryDirectory
 
 import pytest
+from pydantic import ValidationError
 
 from a3fe import LegType, StageType
 
@@ -15,14 +16,14 @@ def test_create_default_config(system_prep_config):
 
 def test_incorrect_config(system_prep_config):
     """Test that an incorrect config raises an error."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationError):
         system_prep_config(ensemble_equilibration_time=-1)
 
 
 def test_incorrect_config_mod(system_prep_config):
     """Test that modifying the default config incorrectly raises an error."""
     config = system_prep_config()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationError):
         config.ensemble_equilibration_time = -1
 
 

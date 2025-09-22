@@ -3,6 +3,7 @@
 from tempfile import TemporaryDirectory
 import os
 import pytest
+from pydantic import ValidationError
 
 
 def test_config_yaml_save_and_load(engine_config):
@@ -42,6 +43,19 @@ def test_write_config_somd(engine_config):
         assert "integrator = langevinmiddle" in config_content
         assert "constraint = hbonds" in config_content
         assert "hydrogen mass repartitioning factor = 3.0" in config_content
+
+
+def test_incorrect_engine_config(engine_config):
+    """Test that an incorrect engine config raises an error."""
+    with pytest.raises(ValidationError):
+        engine_config(cutoff_distance=-8)
+
+
+def test_incorrect_engine_config_mod(engine_config):
+    """Test that modifying an incorrect engine config raises an error."""
+    config = engine_config()
+    with pytest.raises(ValidationError):
+        config.cutoff_distance = -8
 
 
 @pytest.mark.parametrize(

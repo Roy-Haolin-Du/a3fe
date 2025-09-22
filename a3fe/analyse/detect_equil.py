@@ -329,7 +329,7 @@ def check_equil_multiwindow(
             equil_time = (
                 _np.sum(
                     [
-                        lam_win.get_total_simtime(run_nos=run_nos)
+                        lam_win.get_tot_simtime(run_nos=run_nos)
                         for lam_win in lambda_windows
                     ]
                 )

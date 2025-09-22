@@ -50,7 +50,7 @@ def _create_example_input_dir(engine_type):
         calc = a3.Calculation(
             base_dir=temp_dir,
             input_dir=f"{temp_dir}/input",
-            ensemble_size=2,
+            ensemble_size=5,
             stream_log_level=logging.CRITICAL,
             engine_type=engine_type,
         )

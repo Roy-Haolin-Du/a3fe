@@ -23,10 +23,10 @@ sys.path.insert(0, os.path.abspath(".."))
 
 project = "a3fe"
 copyright = (
-    "2023, Finlay Clark. Project structure based on the "
+    "2025, Finlay Clark and Roy Haolin Du. Project structure based on the "
     "Computational Molecular Science Python Cookiecutter version 1.1"
 )
-author = "Finlay Clark"
+author = "Finlay Clark and Roy Haolin Du"
 
 # The short X.Y version
 version = ""

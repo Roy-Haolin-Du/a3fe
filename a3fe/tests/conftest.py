@@ -40,9 +40,14 @@ def calc_set():
         subprocess.run(["cp", "-r", "a3fe/data/example_calc_set/", dirname], check=True)
         base_dir = os.path.join(dirname, "example_calc_set")
         calc_paths = [os.path.join(base_dir, name) for name in ["mdm2_short", "t4l"]]
+
+        # Create test SLURM config to avoid calling sinfo
+        test_slurm_config = a3.SlurmConfig(partition="test_partition")
+
         calc_set = a3.CalcSet(
             base_dir=base_dir,
             calc_paths=calc_paths,
+            slurm_config=test_slurm_config,
         )
         yield calc_set
 
@@ -68,10 +73,14 @@ def restrain_stage_grad_data(restrain_stage):
 def calc():
     """Create a calculation object to use in tests"""
     with TemporaryDirectory() as dirname:
+        # Create test SLURM config to avoid calling sinfo
+        test_slurm_config = a3.SlurmConfig(partition="test_partition")
+
         calc = a3.Calculation(
             base_dir=dirname,
             input_dir="a3fe/data/example_run_dir/input",
             ensemble_size=6,
+            slurm_config=test_slurm_config,
         )
         calc._dump()
         # Must use yield so that the temporary directory is deleted after the tests
@@ -96,8 +105,12 @@ def t4l_calc():
         # Copy over remaining input files
         # No files need to be copied
 
+        # Create test SLURM config to avoid calling sinfo
+        test_slurm_config = a3.SlurmConfig(partition="test_partition")
+
         calc = a3.Calculation(
             base_dir=dirname,
+            slurm_config=test_slurm_config,
         )
         calc._dump()
 

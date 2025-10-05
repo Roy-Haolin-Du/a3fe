@@ -195,8 +195,8 @@ class TestSlurmIntegration:
         calc = self._setup_calculation(slurm_calc_adaptive, system_prep_config)
 
         # Use a larger runtime_constant to greatly accelerate the test
-        # The standard value is 0.0005
-        calc.run(adaptive=True, runtime_constant=0.0005)
+        # The standard value is 0.0005, we set it to 0.005 to greatly accelerate for the test
+        calc.run(adaptive=True, runtime_constant=0.005)
         calc.wait()
 
         # Check that the calculation is not running

@@ -9,6 +9,7 @@ import pathlib as _pathlib
 import threading as _threading
 from copy import deepcopy as _deepcopy
 from math import ceil as _ceil
+import matplotlib.pyplot as _plt
 from multiprocessing import get_context as _get_context
 from time import sleep as _sleep
 from typing import Any as _Any
@@ -80,7 +81,7 @@ class Stage(_SimulationRunner):
         self,
         stage_type: _StageType,
         equil_detection: str = "multiwindow",
-        runtime_constant: _Optional[float] = 0.005,
+        runtime_constant: _Optional[float] = 0.0005,
         relative_simulation_cost: float = 1,
         ensemble_size: int = 5,
         base_dir: _Optional[str] = None,
@@ -106,7 +107,7 @@ class Stage(_SimulationRunner):
             Method to use for equilibration detection. Options are:
             - "multiwindow": Use the multiwindow paired t-test method to detect equilibration.
             - "chodera": Use Chodera's method to detect equilibration.
-        runtime_constant : float, Optional, default: 0.005
+        runtime_constant : float, Optional, default: 0.0005
             The runtime_constant (kcal**2 mol**-2 ns*-1) only affects behaviour if running adaptively, and must
             be supplied if running adaptively. This is used to calculate how long to run each simulation for based on
             the current uncertainty of the per-window free energy estimate, as discussed in the docstring of the run() method.
@@ -660,8 +661,8 @@ class Stage(_SimulationRunner):
             between each lambda value, in kcal mol^(-1). If er_type == "sem", the
             desired integrated standard error of the mean of the gradients between each lambda
             value, in kcal mol^(-1) ns^(1/2). A sensible default for sem is 0.1 kcal mol-1 ns1/2,
-            and for root_var is 1 kcal mol-1.  If not provided, the number of lambda windows must be
-            provided with n_lam_vals.
+            and for root_var is 2 kcal mol-1.  If not provided, the number of lambda windows must be
+            provided with n_lam_vals. This is referred to as 'thermodynamic speed' in the publication.
         n_lam_vals : int, optional, default=None
             The number of lambda values to sample. If not provided, delta_er must be provided.
         run_nos : List[int], optional, default=[1]
@@ -778,14 +779,15 @@ class Stage(_SimulationRunner):
                     "Despite equilibration being detected, no equilibration time was found."
                 )
 
-        if get_frnrg:
-            self._logger.info(
-                f"Computing free energy changes using the MBAR for runs {run_nos}"
-            )
+        try:  # Conduct analysis
+            if get_frnrg:
+                self._logger.info(
+                    f"Computing free energy changes using the MBAR for runs {run_nos}"
+                )
 
-            # Remove unequilibrated data from the equilibrated output directory
-            for win in self.lam_windows:
-                win._write_equilibrated_simfiles()
+                # Remove unequilibrated data from the equilibrated output directory
+                for win in self.lam_windows:
+                    win._write_equilibrated_simfiles()
 
             # Run MBAR and compute mean and 95 % C.I. of free energy
             if not slurm:
@@ -818,131 +820,134 @@ class Stage(_SimulationRunner):
                     tmp_files=tmp_files,
                 )
 
-            mean_free_energy = _np.mean(free_energies)
-            # Gaussian 95 % C.I.
-            conf_int = (
-                _stats.t.interval(
-                    0.95,
-                    len(free_energies) - 1,
-                    mean_free_energy,
-                    scale=_stats.sem(free_energies),
-                )[1]
-                - mean_free_energy
-            )  # 95 % C.I.
+                mean_free_energy = _np.mean(free_energies)
+                # Gaussian 95 % C.I.
+                conf_int = (
+                    _stats.t.interval(
+                        0.95,
+                        len(free_energies) - 1,
+                        mean_free_energy,
+                        scale=_stats.sem(free_energies),
+                    )[1]
+                    - mean_free_energy
+                )  # 95 % C.I.
 
-            # Write overall MBAR stats to file
-            with open(f"{self.output_dir}/overall_stats.dat", "a") as ofile:
-                if get_frnrg:
-                    ofile.write(
-                        "###################################### Free Energies ########################################\n"
-                    )
-                    ofile.write(
-                        f"Mean free energy: {mean_free_energy: .3f} + /- {conf_int:.3f} kcal/mol\n"
-                    )
-                    for i in range(len(free_energies)):
+                # Write overall MBAR stats to file
+                with open(f"{self.output_dir}/overall_stats.dat", "a") as ofile:
+                    if get_frnrg:
                         ofile.write(
-                            f"Free energy from run {i + 1}: {free_energies[i]: .3f} +/- {errors[i]:.3f} kcal/mol\n"
+                            "###################################### Free Energies ########################################\n"
                         )
-                    ofile.write(
-                        "Errors are 95 % C.I.s based on the assumption of a Gaussian distribution of free energies\n"
-                    )
-                    ofile.write(f"Runs analysed: {run_nos}\n")
+                        ofile.write(
+                            f"Mean free energy: {mean_free_energy: .3f} + /- {conf_int:.3f} kcal/mol\n"
+                        )
+                        for i in range(len(free_energies)):
+                            ofile.write(
+                                f"Free energy from run {i + 1}: {free_energies[i]: .3f} +/- {errors[i]:.3f} kcal/mol\n"
+                            )
+                        ofile.write(
+                            "Errors are 95 % C.I.s based on the assumption of a Gaussian distribution of free energies\n"
+                        )
+                        ofile.write(f"Runs analysed: {run_nos}\n")
 
-            # Plot overlap matrices and PMFs
-            _plot_overlap_mats(
-                output_dir=self.output_dir,
-                nlam=len(self.lam_windows),
-                mbar_outfiles=mbar_outfiles,
-            )
-            _plot_mbar_pmf(mbar_outfiles, self.output_dir)
+                # Plot overlap matrices and PMFs
+                _plot_overlap_mats(
+                    output_dir=self.output_dir,
+                    nlam=len(self.lam_windows),
+                    mbar_outfiles=mbar_outfiles,
+                )
+                _plot_mbar_pmf(mbar_outfiles, self.output_dir)
+                equilibrated_gradient_data = _GradientData(
+                    lam_winds=self.lam_windows, equilibrated=True
+                )
+                _plot_overlap_mats(
+                    output_dir=self.output_dir,
+                    nlam=len(self.lam_windows),
+                    predicted=True,
+                    gradient_data=equilibrated_gradient_data,
+                )
+
+            # Plot RMSDS
+            if plot_rmsds:
+                self._logger.info("Plotting RMSDs")
+                _plot_rmsds(
+                    lam_windows=self.lam_windows,
+                    output_dir=self.output_dir,
+                    selection="resname LIG and (not name H*)",
+                )
+
+            # Analyse the gradient data and make plots
+            self._logger.info("Plotting gradients data")
             equilibrated_gradient_data = _GradientData(
-                lam_winds=self.lam_windows, equilibrated=True
+                lam_winds=self.lam_windows, equilibrated=True, run_nos=run_nos
             )
-            _plot_overlap_mats(
-                output_dir=self.output_dir,
-                nlam=len(self.lam_windows),
-                predicted=True,
-                gradient_data=equilibrated_gradient_data,
-            )
-
-        # Plot RMSDS
-        if plot_rmsds:
-            self._logger.info("Plotting RMSDs")
-            _plot_rmsds(
-                lam_windows=self.lam_windows,
-                output_dir=self.output_dir,
-                selection="resname LIG and (not name H*)",
-            )
-
-        # Analyse the gradient data and make plots
-        self._logger.info("Plotting gradients data")
-        equilibrated_gradient_data = _GradientData(
-            lam_winds=self.lam_windows, equilibrated=True, run_nos=run_nos
-        )
-        for plot_type in [
-            "mean",
-            "stat_ineff",
-            "integrated_sem",
-            "integrated_var",
-            "pred_best_simtime",
-        ]:
-            _plot_gradient_stats(
+            for plot_type in [
+                "mean",
+                "stat_ineff",
+                "integrated_sem",
+                "integrated_var",
+                "pred_best_simtime",
+            ]:
+                _plot_gradient_stats(
+                    gradients_data=equilibrated_gradient_data,
+                    output_dir=self.output_dir,
+                    plot_type=plot_type,
+                )
+            _plot_gradient_hists(
                 gradients_data=equilibrated_gradient_data,
                 output_dir=self.output_dir,
-                plot_type=plot_type,
+                run_nos=run_nos,
             )
-        _plot_gradient_hists(
-            gradients_data=equilibrated_gradient_data,
-            output_dir=self.output_dir,
-            run_nos=run_nos,
-        )
-        _plot_gradient_timeseries(
-            gradients_data=equilibrated_gradient_data,
-            output_dir=self.output_dir,
-            run_nos=run_nos,
-        )
+            _plot_gradient_timeseries(
+                gradients_data=equilibrated_gradient_data,
+                output_dir=self.output_dir,
+                run_nos=run_nos,
+            )
 
-        # Make plots of equilibration time
-        self._logger.info("Plotting equilibration times")
-        _plot_equilibration_time(
-            lam_windows=self.lam_windows, output_dir=self.output_dir
-        )
+            # Make plots of equilibration time
+            self._logger.info("Plotting equilibration times")
+            _plot_equilibration_time(
+                lam_windows=self.lam_windows, output_dir=self.output_dir
+            )
 
-        # Check and plot the Gelman-Rubin stat
-        rhat_dict = _check_equil_multiwindow_gelman_rubin(
-            lambda_windows=self.lam_windows, output_dir=self.output_dir
-        )
-        rhat_equil = {lam: rhat < 1.1 for lam, rhat in rhat_dict.items()}
-        for lam, equil in rhat_equil.items():
-            if not equil:
-                self._logger.warning(
-                    f"The Gelman-Rubin statistic for lambda = {lam} is greater than 1.1. "
-                    "This suggests that the repeat simulations have not converged to the "
-                    "same distirbution and there is a sampling issue."
-                )
+            # Check and plot the Gelman-Rubin stat
+            rhat_dict = _check_equil_multiwindow_gelman_rubin(
+                lambda_windows=self.lam_windows, output_dir=self.output_dir
+            )
+            rhat_equil = {lam: rhat < 1.1 for lam, rhat in rhat_dict.items()}
+            for lam, equil in rhat_equil.items():
+                if not equil:
+                    self._logger.warning(
+                        f"The Gelman-Rubin statistic for lambda = {lam} is greater than 1.1. "
+                        "This suggests that the repeat simulations have not converged to the "
+                        "same distirbution and there is a sampling issue."
+                    )
 
-        # Write out stats
-        with open(f"{self.output_dir}/overall_stats.dat", "a") as ofile:
-            for win in self.lam_windows:
-                ofile.write(
-                    f"Equilibration time for lambda = {win.lam}: {win.equil_time:.3f} ns per simulation\n"
-                )
-                ofile.write(
-                    f"Total time simulated for lambda = {win.lam}: {win.sims[0].tot_simtime:.3f} ns per simulation\n"
-                )
+            # Write out stats
+            with open(f"{self.output_dir}/overall_stats.dat", "a") as ofile:
+                for win in self.lam_windows:
+                    ofile.write(
+                        f"Equilibration time for lambda = {win.lam}: {win.equil_time:.3f} ns per simulation\n"
+                    )
+                    ofile.write(
+                        f"Total time simulated for lambda = {win.lam}: {win.sims[0].tot_simtime:.3f} ns per simulation\n"
+                    )
 
-        if get_frnrg:
-            self._logger.info(
-                f"Overall free energy changes: {free_energies} kcal mol-1"
-            )  # type: ignore
-            self._logger.info(f"Overall errors: {errors} kcal mol-1")  # type: ignore
-            self._logger.info(f"Analysed runs: {run_nos}")
-            # Update the interally-stored results
-            self._delta_g = free_energies
-            self._delta_g_er = errors
-            return free_energies, errors  # type: ignore
-        else:
-            return None, None
+            if get_frnrg:
+                self._logger.info(
+                    f"Overall free energy changes: {free_energies} kcal mol-1"
+                )  # type: ignore
+                self._logger.info(f"Overall errors: {errors} kcal mol-1")  # type: ignore
+                self._logger.info(f"Analysed runs: {run_nos}")
+                # Update the interally-stored results
+                self._delta_g = free_energies
+                self._delta_g_er = errors
+                return free_energies, errors  # type: ignore
+            else:
+                return None, None
+
+        finally:  # Ensure that all plotting resources are closed
+            _plt.close("all")
 
     def get_results_df(self, save_csv: bool = True) -> _pd.DataFrame:
         """

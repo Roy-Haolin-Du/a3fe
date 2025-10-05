@@ -188,7 +188,7 @@ class CalcSet(_SimulationRunner):
         self,
         simtime: float = 0.1,
         er_type: str = "root_var",
-        delta_er: float = 1,
+        delta_er: float = 2,
         set_relative_sim_cost: bool = True,
         reference_sim_cost: float = 0.21,
         run_nos: _List[int] = [1],
@@ -209,12 +209,13 @@ class CalcSet(_SimulationRunner):
             Whether to integrate the standard error of the mean ("sem") or root
             variance of the gradients ("root_var") to calculate the optimal
             lambda values.
-        delta_er : float, default=1
+        delta_er : float, default=2
             If er_type == "root_var", the desired integrated root variance of the gradients
             between each lambda value, in kcal mol^(-1). If er_type == "sem", the
             desired integrated standard error of the mean of the gradients between each lambda
-            value, in kcal mol^(-1) ns^(1/2). A sensible default for root_var is 1 kcal mol-1,
-            and 0.1 kcal mol-1 ns^(1/2) for sem.
+            value, in kcal mol^(-1) ns^(1/2). A sensible default for root_var is 2 kcal mol-1,
+            and 0.1 kcal mol-1 ns^(1/2) for sem. This is referred to as 'thermodynamic speed'
+            in the publication.
         set_relative_sim_cost: bool, optional, default=True
             Whether to recursively set the relative simulation cost for the leg and all
             sub simulation runners according to the mean simulation cost of the leg.
@@ -473,3 +474,36 @@ class CalcSet(_SimulationRunner):
                 offset=offset,
                 stats=stats,
             )
+
+    # Avoid base class methods which aren't valid being called
+    @property
+    def delta_g(self):
+        raise AttributeError("CalcSet objects do not have a delta_g attribute.")
+
+    @property
+    def delta_g_err(self):
+        raise AttributeError("CalcSet objects do not have a delta_g_err attribute.")
+
+    def get_results_df(self, save_csv: bool = True, add_sub_sim_runners: bool = True):
+        # TODO: Implement this method
+        raise NotImplementedError(
+            "This method is not implemented for CalcSet objects. Use the analyse method to get free energy changes."
+        )
+
+    def analyse_convergence(
+        self,
+        slurm: bool = False,
+        run_nos: _Optional[_List[int]] = None,
+        mode: str = "cumulative",
+        fraction: float = 1,
+        equilibrated: bool = True,
+    ):
+        """
+        Not implemented for CalcSet objects as convergence analysis is expensive.
+        Call the analyse_convergence method on individual calculations instead (or
+        run analyse convergence on each calculation in the set, if you're determined).
+        """
+        raise NotImplementedError(
+            "This method is not implemented for CalcSet objects (due to high computational ",
+            "expense. Call the analyse_convergence method on individual calculations instead.",
+        )

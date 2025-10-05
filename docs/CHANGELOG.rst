@@ -20,6 +20,33 @@ However, with version 0.4.0, these files are no longer needed. Instead, configur
 
 For examples and detailed usage of these configuration objects, see the `Customising Calculations <guides.html#customising-calculations>`_ section in the documentation.
 
+0.3.6
+====================
+- Pinned alchemlyb to version 1.0.1 to avoid compatibility issues with pymbar<4.
+
+0.3.5
+====================
+- Changed the defaults for runtime_constants and thermodynamic speed ("delta_er") to be consistent with the optimised values in the publication (https://pubs.acs.org/doi/full/10.1021/acs.jctc.4c00806).
+
+0.3.4
+====================
+- Added loguru to make dependency explicit in the environment.yaml and conda-envs/test_env.yaml files.
+
+0.3.3
+====================
+- Fixed bug in water analysis ``get_water_stage()`` which caused repeats ``runs_nos`` and an error related to incorrect numbers of positional arguments.
+
+0.3.2
+====================
+- Fix bug which caused somd.rst7 files in the ensemble equilibration directories to be incorrectly numbered in some cases.
+- Fix bug which caused the output directory to be incorrectly replaced with "output" in some cases.
+- Ensure that all plotting resources get closed after analysis to avoid continually increasing memory usage.
+
+0.3.1
+====================
+- Modified the SimulationRunnerIterator to ensure that the state of sub-simulation runners is saved before they are torn down. This means that setting the equilibration time at the CalcSet level will now work as expected (previously the state of the calculations was not saved, causing the analysis to fail).
+- Updated read_overlap_mat so that it works when "#Overlap" is not printed to a new line (but is included at the end of the previous line). This seems to happen when MBAR requires many iterations to converge.
+
 0.3.0
 ====================
 

@@ -55,7 +55,7 @@ docs:
 
 # clean build files
 clean:
-	cd docs && make clean
+	rm -rf docs/_build/
 	rm -rf build/
 	rm -rf dist/
 	rm -rf *.egg-info

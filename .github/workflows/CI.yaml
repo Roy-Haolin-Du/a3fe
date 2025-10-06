@@ -45,8 +45,8 @@ jobs:
         run: |
           make lint
           make test
-          make clean
           make docs
+          make clean
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4.0.1

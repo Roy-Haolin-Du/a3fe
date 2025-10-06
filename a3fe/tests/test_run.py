@@ -193,7 +193,12 @@ def test_parameterisation_free(t4l_calc, system_prep_config, engine_type):
     """Test that the parameterisation of benzene works as expected."""
 
     leg_type = a3.LegType.FREE
-    free_leg = a3.Leg(leg_type=leg_type, base_dir=t4l_calc.base_dir)
+
+    # Create test SLURM config to avoid calling sinfo
+    test_slurm_config = a3.SlurmConfig(partition="test_partition")
+    free_leg = a3.Leg(
+        leg_type=leg_type, base_dir=t4l_calc.base_dir, slurm_config=test_slurm_config
+    )
 
     try:
         # We need to save the config to the input directory
@@ -239,7 +244,12 @@ def test_parameterisation_free(t4l_calc, system_prep_config, engine_type):
 def test_parameterisation_bound(t4l_calc, system_prep_config, engine_type):
     """Test that the parameterisation of benzene and T4L works as expected."""
     leg_type = a3.LegType.BOUND
-    bound_leg = a3.Leg(leg_type=leg_type, base_dir=t4l_calc.base_dir)
+
+    # Create test SLURM config to avoid calling sinfo
+    test_slurm_config = a3.SlurmConfig(partition="test_partition")
+    bound_leg = a3.Leg(
+        leg_type=leg_type, base_dir=t4l_calc.base_dir, slurm_config=test_slurm_config
+    )
 
     try:
         # We need to save the config to the input directory
@@ -349,12 +359,16 @@ class TestCalcSetup:
                 ]
             )
 
+            # Create test SLURM config to avoid calling sinfo
+            test_slurm_config = a3.SlurmConfig(partition="test_partition")
+
             setup_calc = a3.Calculation(
                 base_dir=dirname,
                 input_dir=f"{dirname}/input",
                 ensemble_size=1,
                 stream_log_level=logging.CRITICAL,  # Silence the logging
                 engine_type=engine_type,
+                slurm_config=test_slurm_config,
             )
             assert (
                 setup_calc.prep_stage.name

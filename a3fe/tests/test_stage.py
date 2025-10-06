@@ -23,6 +23,10 @@ def test_dirs_created(engine_config):
         )
         config = engine_config(input_dir=f"{dirname}/input")
         config.lambda_values = [0.0, 0.252, 0.593, 1.0]
+
+        # Create test SLURM config to avoid calling sinfo
+        test_slurm_config = a3.SlurmConfig(partition="test_partition")
+
         # This should create output directories
         a3.Stage(
             stage_type=a3.StageType.DISCHARGE,
@@ -31,6 +35,7 @@ def test_dirs_created(engine_config):
             output_dir=f"{dirname}/output",
             stream_log_level=logging.WARNING,
             engine_config=config,
+            slurm_config=test_slurm_config,
         )
 
         lam_dir_names = ["lambda_0.000", "lambda_0.252", "lambda_0.593", "lambda_1.000"]

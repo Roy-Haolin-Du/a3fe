@@ -1,0 +1,23 @@
+name: a3fe
+channels:
+
+  - conda-forge
+  - "openbiosim/label/dev"
+
+dependencies:
+    # Base depends
+  - arviz
+  - pandas
+  - python>=3.9
+  - pip
+  - numpy
+  - matplotlib
+  - scipy
+  - ipython
+  - pymbar<4
+  - alchemlyb=1.0.1 # We were getting a newer version incompatible with pymbar<4
+  - ambertools
+  - biosimspace>2023.4
+  - pydantic
+  - pyyaml
+  - loguru

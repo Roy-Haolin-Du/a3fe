@@ -1,0 +1,39 @@
+name: a3fe
+channels:
+
+  - conda-forge
+  - "openbiosim"
+  - "openbiosim/label/dev"
+
+  - defaults
+dependencies:
+    # Base depends
+  - arviz
+  - pandas
+  - python>=3.9
+  - pip
+  - numpy
+  - matplotlib
+  - scipy
+  - ipython
+  - pymbar<4
+  - ambertools
+  - biosimspace>2023.4
+  - numpydoc
+  - pydantic
+  - ruff
+  - pyyaml
+
+    # Testing
+  - pytest
+  - pytest-cov
+  - codecov
+
+    # Documentation
+  - "sphinx<7.0.0"
+  - sphinx_rtd_theme
+  - numpydoc
+
+    # Development tools
+  - pre-commit
+

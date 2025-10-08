@@ -39,12 +39,15 @@ def calc_set():
         # Copy input files to the temporary directory
         subprocess.run(["cp", "-r", "a3fe/data/example_calc_set/", dirname], check=True)
         base_dir = os.path.join(dirname, "example_calc_set")
-        calc_paths = [
-            os.path.join(base_dir, name) for name in ["mdm2_pip2_short", "t4l"]
-        ]
+        calc_paths = [os.path.join(base_dir, name) for name in ["mdm2_short", "t4l"]]
+
+        # Create test SLURM config to avoid calling sinfo
+        test_slurm_config = a3.SlurmConfig(partition="test_partition")
+
         calc_set = a3.CalcSet(
             base_dir=base_dir,
             calc_paths=calc_paths,
+            slurm_config=test_slurm_config,
         )
         yield calc_set
 
@@ -70,10 +73,14 @@ def restrain_stage_grad_data(restrain_stage):
 def calc():
     """Create a calculation object to use in tests"""
     with TemporaryDirectory() as dirname:
+        # Create test SLURM config to avoid calling sinfo
+        test_slurm_config = a3.SlurmConfig(partition="test_partition")
+
         calc = a3.Calculation(
             base_dir=dirname,
             input_dir="a3fe/data/example_run_dir/input",
             ensemble_size=6,
+            slurm_config=test_slurm_config,
         )
         calc._dump()
         # Must use yield so that the temporary directory is deleted after the tests
@@ -96,18 +103,14 @@ def t4l_calc():
         )
 
         # Copy over remaining input files
-        for file in ["run_somd.sh", "template_config.cfg"]:
-            subprocess.run(
-                [
-                    "cp",
-                    os.path.join("a3fe/data/example_run_dir/input/", file),
-                    os.path.join(dirname, "input"),
-                ],
-                check=True,
-            )
+        # No files need to be copied
+
+        # Create test SLURM config to avoid calling sinfo
+        test_slurm_config = a3.SlurmConfig(partition="test_partition")
 
         calc = a3.Calculation(
             base_dir=dirname,
+            slurm_config=test_slurm_config,
         )
         calc._dump()
 
@@ -133,3 +136,66 @@ def a3fe_restraint():
     with open("a3fe/data/example_run_dir/input/restraint.pkl", "rb") as f:
         a3fe_restraint = pkl.load(f)
     yield a3fe_restraint
+
+
+@pytest.fixture(scope="session", params=[a3.EngineType.SOMD])
+def engine_type(request):
+    """Create an SOMD engine object to use in tests temporarily future GROMACS"""
+    return request.param
+
+
+@pytest.fixture(scope="session")
+def engine_config(engine_type):
+    """Create an engine configuration object to use in tests"""
+    return engine_type.engine_config
+
+
+@pytest.fixture(scope="session")
+def system_prep_config(engine_type):
+    """Create an system preparation configuration object to use in tests"""
+    return engine_type.system_prep_config
+
+
+@pytest.fixture(scope="session")
+def somd_engine_config():
+    """Create a SOMD-specific engine configuration for tests"""
+    return a3.EngineType.SOMD.engine_config
+
+
+# Integration test configuration
+class IntegrationTestHooks:
+    """Integration test hook functions collection class."""
+
+    @staticmethod
+    def configure(config):
+        """Set up pytest integration test markers."""
+        config.addinivalue_line(
+            "markers", "integration: mark a test as an integration test"
+        )
+
+    @staticmethod
+    def add_options(parser):
+        """Add integration test command line options."""
+        parser.addoption(
+            "--run-integration",
+            action="store_true",
+            default=False,
+            help="run integration tests",
+        )
+
+    @staticmethod
+    def modify_items(config, items):
+        """If the --run-integration option is not specified, skip all tests marked with integration."""
+        if not config.getoption("--run-integration"):
+            skip_integration = pytest.mark.skip(
+                reason="need --run-integration option to run"
+            )
+            for item in items:
+                if "integration" in item.keywords:
+                    item.add_marker(skip_integration)
+
+
+# Export the class methods as hook functions
+pytest_configure = IntegrationTestHooks.configure
+pytest_addoption = IntegrationTestHooks.add_options
+pytest_collection_modifyitems = IntegrationTestHooks.modify_items

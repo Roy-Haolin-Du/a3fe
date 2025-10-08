@@ -12,13 +12,16 @@ from typing import Optional as _Optional
 import numpy as _np
 from scipy import stats as _stats
 
+from ..configuration import SlurmConfig as _SlurmConfig
+from ..configuration import _EngineConfig
+from ..configuration import _BaseSystemPreparationConfig
+
 from ..analyse.analyse_set import compute_stats as _compute_stats
 from ..analyse.plot import plot_against_exp as _plt_against_exp
 from ..read._read_exp_dgs import read_exp_dgs as _read_exp_dgs
 from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._utils import SimulationRunnerIterator as _SimulationRunnerIterator
 from .calculation import Calculation as _Calculation
-from .system_prep import SystemPreparationConfig as _SystemPreparationConfig
 
 
 class CalcSet(_SimulationRunner):
@@ -36,6 +39,9 @@ class CalcSet(_SimulationRunner):
         input_dir: _Optional[str] = None,
         output_dir: _Optional[str] = None,
         stream_log_level: int = _logging.INFO,
+        slurm_config: _Optional[_SlurmConfig] = None,
+        analysis_slurm_config: _Optional[_SlurmConfig] = None,
+        engine_config: _Optional[_EngineConfig] = None,
         update_paths: bool = True,
     ) -> None:
         """
@@ -49,8 +55,7 @@ class CalcSet(_SimulationRunner):
             List of paths to the Calculation base directories. If None, then all directories
             in the current directory will be assumed to be calculation base directories
         calc_args: Dict[str: _Dict], Optional, default: {}
-            Dictionary of arguments to pass to the Calculation objects in the form
-            {"path_to_calc_base_dir": {keyword: arg, ...} ...}
+            Dictionary of kwargsto pass to the Calculation objects.
         base_dir : str, Optional, default: None
             Path to the base directory which contains all the Calculations. If None,
             this is set to the current working directory.
@@ -63,6 +68,15 @@ class CalcSet(_SimulationRunner):
         stream_log_level : int, Optional, default: logging.INFO
             Logging level to use for the steam file handlers for the
             set object and its child objects.
+        slurm_config: SlurmConfig, default: None
+            Configuration for the SLURM job scheduler. If None, the
+            default partition is used.
+        analysis_slurm_config: SlurmConfig, default: None
+            Configuration for the SLURM job scheduler for the analysis.
+            This is helpful e.g. if you want to submit analysis to the CPU
+            partition, but the main simulation to the GPU partition. If None,
+        engine_config: EngineConfig, default: None
+            Configuration for the engine. If None, the default configuration is used.
         update_paths: bool, Optional, default: True
             If True, if the simulation runner is loaded by unpickling, then
             update_paths() is called.
@@ -77,6 +91,9 @@ class CalcSet(_SimulationRunner):
             output_dir=output_dir,
             stream_log_level=stream_log_level,
             update_paths=update_paths,
+            slurm_config=slurm_config,
+            analysis_slurm_config=analysis_slurm_config,
+            engine_config=engine_config,
         )
 
         if not self.loaded_from_pickle:
@@ -88,6 +105,17 @@ class CalcSet(_SimulationRunner):
                     if _os.path.isdir(directory)
                 ]
             self.calc_paths = [_os.path.abspath(directory) for directory in calc_paths]
+
+            # Ensure that all calculations share the same slurm config by adding this if it is not present
+            if calc_args.get("slurm_config") is None:
+                calc_args["slurm_config"] = self.slurm_config
+            if calc_args.get("analysis_slurm_config") is None:
+                calc_args["analysis_slurm_config"] = self.analysis_slurm_config
+            self._calc_args = calc_args
+
+            # Ensure that all calculations share the same somd config by adding this if it is not present
+            if calc_args.get("engine_config") is None:
+                calc_args["engine_config"] = self.engine_config
             self._calc_args = calc_args
 
             # Check that we can load all of the calculations
@@ -128,19 +156,15 @@ class CalcSet(_SimulationRunner):
 
     def setup(
         self,
-        bound_leg_sysprep_config: _Optional[_SystemPreparationConfig] = None,
-        free_leg_sysprep_config: _Optional[_SystemPreparationConfig] = None,
+        sysprep_config: _Optional[_BaseSystemPreparationConfig] = None,
     ) -> None:
         """
         Set up all calculations sequentially.
 
         Parameters
         ----------
-        bound_leg_sysprep_config: SystemPreparationConfig, opttional, default = None
-            The system preparation configuration to use for the bound leg. If None, the default
-            configuration is used.
-        free_leg_sysprep_config: SystemPreparationConfig, opttional, default = None
-            The system preparation configuration to use for the free leg. If None, the default
+        sysprep_config: _BaseSystemPreparationConfig, opttional, default = None
+            The system preparation configuration to use for all calculations. If None, the default
             configuration is used.
         """
         for calc in self.calcs:
@@ -151,10 +175,7 @@ class CalcSet(_SimulationRunner):
                 continue
             try:
                 self._logger.info(f"Setting up calculation in {calc.base_dir}")
-                calc.setup(
-                    bound_leg_sysprep_config=bound_leg_sysprep_config,
-                    free_leg_sysprep_config=free_leg_sysprep_config,
-                )
+                calc.setup(sysprep_config=sysprep_config)
                 self._logger.info(f"Calculation in {calc.base_dir} successfully set up")
 
             except Exception as e:

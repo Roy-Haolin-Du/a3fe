@@ -10,7 +10,8 @@ description = "Automated Adaptive Absolute alchemical Free Energy calculator. A 
 dynamic = ["version"]
 readme = "README.md"
 authors = [
-    { name = "Finlay Clark", email = "finlay.clark@ed.ac.uk" }
+    { name = "Finlay Clark", email = "finlay.clark@ed.ac.uk" },
+    { name = "Roy Haolin DU", email = "s2015679@ed.ac.uk"}
 ]
 license = { text = "MIT" }
 # See https://pypi.org/classifiers/
@@ -33,6 +34,7 @@ dependencies = [
      "pymbar<4",
      "alchemlyb==1.0.1", # We were getting a newer version incompatible with pymbar<4
      "pydantic",
+     "pyyaml",
 ]
 
 # Update the urls once the hosting is set up.

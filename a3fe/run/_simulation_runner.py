@@ -27,6 +27,11 @@ from ..analyse.plot import plot_convergence as _plot_convergence
 from ..analyse.plot import plot_sq_sem_convergence as _plot_sq_sem_convergence
 from ._logging_formatters import _A3feFileFormatter, _A3feStreamFormatter
 
+from ..configuration import SlurmConfig as _SlurmConfig
+from ..configuration import EngineType as _EngineType
+from ..configuration import _EngineConfig
+from .._version import __version__ as _version
+
 
 class SimulationRunner(ABC):
     """An abstract base class for simulation runners. Note that
@@ -51,6 +56,10 @@ class SimulationRunner(ABC):
         base_dir: _Optional[str] = None,
         input_dir: _Optional[str] = None,
         output_dir: _Optional[str] = None,
+        slurm_config: _Optional[_SlurmConfig] = None,
+        analysis_slurm_config: _Optional[_SlurmConfig] = None,
+        engine_config: _Optional[_EngineConfig] = None,
+        engine_type: _EngineType = _EngineType.SOMD,
         stream_log_level: int = _logging.INFO,
         dg_multiplier: int = 1,
         ensemble_size: int = 5,
@@ -69,6 +78,18 @@ class SimulationRunner(ABC):
             Path to the output directory in which to store the
             output from the simulation. If None, this is set
             to `base_directory/output`.
+        slurm_config: SlurmConfig, default: None
+            Configuration for the SLURM job scheduler. If None, the
+            default partition is used.
+        analysis_slurm_config: SlurmConfig, default: None
+            Configuration for the SLURM job scheduler for the analysis.
+            This is helpful e.g. if you want to submit analysis to the CPU
+            partition, but the main simulation to the GPU partition. If None,
+            the standard slurm_config is used.
+        engine_config: EngineConfig, default: None
+            Configuration for the engine. If None, the default configuration is used.
+        engine_type: EngineType, default: EngineType.SOMD
+            The type of engine to use for the production simulations.
         stream_log_level : int, Optional, default: logging.INFO
             Logging level to use for the steam file handlers for the
             calculation object and its child objects.
@@ -84,6 +105,13 @@ class SimulationRunner(ABC):
         dump: bool, Optional, default: True
             If True, the state of the simulation runner is saved to a pickle file.
         """
+        # Set the version of the simulation runner
+        self._logger = _logging.getLogger(self.__class__.__name__)
+        self._version = _version
+        self._logger.debug(
+            f"Initializing simulation runner with A3fe version: {self._version}"
+        )
+
         # Set up the directories (which may be overwritten if the
         # simulation runner is subsequently loaded from a pickle file)
         # Make sure that we always use absolute paths
@@ -141,6 +169,33 @@ class SimulationRunner(ABC):
             # Set up logging
             self._stream_log_level = stream_log_level
             self._set_up_logging()
+
+            # Create a SLURM config with the default partition if none is provided
+            if slurm_config is None:
+                default_partition = _SlurmConfig.get_default_partition()
+                self._logger.info(
+                    f"No SLURM config provided, using default partition {default_partition}"
+                )
+                self.slurm_config = _SlurmConfig(partition=default_partition)
+            else:
+                self.slurm_config = slurm_config
+
+            # Use the same SLURM config for analysis if none is provided
+            self.analysis_slurm_config = (
+                analysis_slurm_config
+                if analysis_slurm_config is not None
+                else self.slurm_config.copy()
+            )
+
+            # Create the SOMD config with default values if none is provided
+            self.engine_config = (
+                engine_config
+                if engine_config is not None
+                else engine_type.engine_config(
+                    input_dir=self.input_dir  # Use the simulation runner's input directory
+                )
+            )
+            self.engine_type = engine_type
 
             # Save state
             if dump:
@@ -612,9 +667,9 @@ class SimulationRunner(ABC):
     def wait(self) -> None:
         f"""Wait for the {self.__class__.__name__} to finish running."""
         # Give the simulation runner a chance to start
-        _sleep(30)
+        _sleep(self.slurm_config.queue_check_interval)
         while self.running:
-            _sleep(30)  # Check every 30 seconds
+            _sleep(self.slurm_config.queue_check_interval)  # Check every 30 seconds
 
     def get_tot_simtime(self, run_nos: _Optional[_List[int]] = None) -> float:
         f"""
@@ -801,6 +856,12 @@ class SimulationRunner(ABC):
                 attr=attr, value=value, force=force, silent=silent
             )
 
+    def update_engine_config_option(self, option: str, value: str) -> None:
+        """Update an option in the engine configuration file."""
+        setattr(self.engine_config, option, value)
+        for sub_sim_runner in self._sub_sim_runners:
+            sub_sim_runner.update_engine_config_option(option, value)
+
     def set_equilibration_time(self, equil_time: float) -> None:
         """
         Set the equilibration time for the simulation runner and any sub-simulation runners.
@@ -845,11 +906,6 @@ class SimulationRunner(ABC):
         # Update the paths of any sub-simulation runners
         for sub_sim_runner in self._sub_sim_runners:
             sub_sim_runner.update_paths(old_sub_path, new_sub_path)
-
-    def set_simfile_option(self, option: str, value: str) -> None:
-        """Set the value of an option in the simulation configuration file."""
-        for sub_sim_runner in self._sub_sim_runners:
-            sub_sim_runner.set_simfile_option(option, value)
 
     @property
     def stream_log_level(self) -> int:

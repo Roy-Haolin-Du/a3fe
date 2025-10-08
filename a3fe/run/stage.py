@@ -49,11 +49,13 @@ from ..analyse.plot import plot_overlap_mats as _plot_overlap_mats
 from ..analyse.plot import plot_rmsds as _plot_rmsds
 from ..analyse.plot import plot_sq_sem_convergence as _plot_sq_sem_convergence
 from ..analyse.process_grads import GradientData as _GradientData
-from ..read._process_somd_files import write_simfile_option as _write_simfile_option
 from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._virtual_queue import VirtualQueue as _VirtualQueue
-from .enums import StageType as _StageType
+from ..configuration import StageType as _StageType
 from .lambda_window import LamWindow as _LamWindow
+from ..configuration import SlurmConfig as _SlurmConfig
+from ..configuration import _EngineConfig
+from ..configuration import EngineType as _EngineType
 
 
 class Stage(_SimulationRunner):
@@ -82,11 +84,14 @@ class Stage(_SimulationRunner):
         runtime_constant: _Optional[float] = 0.0005,
         relative_simulation_cost: float = 1,
         ensemble_size: int = 5,
-        lambda_values: _Optional[_List[float]] = None,
         base_dir: _Optional[str] = None,
         input_dir: _Optional[str] = None,
         output_dir: _Optional[str] = None,
         stream_log_level: int = _logging.INFO,
+        slurm_config: _Optional[_SlurmConfig] = None,
+        analysis_slurm_config: _Optional[_SlurmConfig] = None,
+        engine_config: _Optional[_EngineConfig] = None,
+        engine_type: _EngineType = _EngineType.SOMD,
         update_paths: bool = True,
     ) -> None:
         """
@@ -113,9 +118,6 @@ class Stage(_SimulationRunner):
             for the free leg.
         ensemble_size : int, Optional, default: 5
             Number of simulations to run in the ensemble.
-        lambda_values : List[float], Optional, default: None
-            List of lambda values to use for the simulations. If None, the lambda values
-            will be read from the simfile.
         base_dir : str, Optional, default: None
             Path to the base directory. If None,
             this is set to the current working directory.
@@ -128,6 +130,17 @@ class Stage(_SimulationRunner):
         stream_log_level : int, Optional, default: logging.INFO
             Logging level to use for the steam file handlers for the
             Ensemble object and its child objects.
+        slurm_config: SlurmConfig, default: None
+            Configuration for the SLURM job scheduler. If None, the
+            default partition is used.
+        analysis_slurm_config: SlurmConfig, default: None
+            Configuration for the SLURM job scheduler for the analysis.
+            This is helpful e.g. if you want to submit analysis to the CPU
+            partition, but the main simulation to the GPU partition. If None,
+        engine_config: EngineConfig, default: None
+            Configuration for the engine. If None, the default configuration is used.
+        engine_type: EngineType, default: EngineType.SOMD
+            The type of engine to use for the production simulations.
         update_paths: bool, Optional, default: True
             If True, if the simulation runner is loaded by unpickling, then
             update_paths() is called.
@@ -137,7 +150,7 @@ class Stage(_SimulationRunner):
         None
         """
         # Set the stage type first, as this is required for __str__,
-        # and threrefore the super().__init__ call
+        # and therefore the super().__init__ call
         self.stage_type = stage_type
 
         super().__init__(
@@ -145,16 +158,16 @@ class Stage(_SimulationRunner):
             input_dir=input_dir,
             output_dir=output_dir,
             stream_log_level=stream_log_level,
+            slurm_config=slurm_config,
+            analysis_slurm_config=analysis_slurm_config,
+            engine_config=engine_config,
+            engine_type=engine_type,
             ensemble_size=ensemble_size,
             update_paths=update_paths,
             dump=False,
         )
 
         if not self.loaded_from_pickle:
-            if lambda_values is not None:
-                self.lam_vals = lambda_values
-            else:
-                self.lam_vals = self._get_lam_vals()
             self.equil_detection = equil_detection
             self.runtime_constant = runtime_constant
             self.relative_simulation_cost = relative_simulation_cost
@@ -183,6 +196,10 @@ class Stage(_SimulationRunner):
                         base_dir=lam_base_dir,
                         input_dir=self.input_dir,
                         stream_log_level=self.stream_log_level,
+                        slurm_config=self.slurm_config,
+                        analysis_slurm_config=self.analysis_slurm_config,
+                        engine_config=self.engine_config.copy(),
+                        engine_type=self.engine_type,
                     )
                 )
 
@@ -197,11 +214,20 @@ class Stage(_SimulationRunner):
         return f"Stage (type = {self.stage_type.name.lower()})"
 
     @property
+    def lam_vals(self) -> _List[float]:
+        return self.engine_config.lambda_values
+
+    @lam_vals.setter
+    def lam_vals(self, value) -> None:
+        self._logger.info("Modifying/ creating lambda values")
+        self.engine_config.lambda_values = value
+
+    @property
     def lam_windows(self) -> _List[_LamWindow]:
         return self._sub_sim_runners
 
     @lam_windows.setter
-    def legs(self, value) -> None:
+    def lam_windows(self, value) -> None:
         self._logger.info("Modifying/ creating lambda windows")
         self._sub_sim_runners = value
 
@@ -242,8 +268,8 @@ class Stage(_SimulationRunner):
         - :math:`t_{\\mathrm{Optimal, k}}` is the calculated optimal runtime for lambda window :math:`k`
         - :math:`t_{\\mathrm{Current}, k}` is the current runtime for lambda window :math:`k`
         - :math:`C` is the runtime constant
-        - :math:`\sigma_{\\mathrm{Current}}(\\Delta \\widehat{F}_k)` is the current uncertainty in the free energy change contribution for lambda window :math:`k`. This is estimated from inter-run deviations.
-        - :math:`\Delta \\widehat{F}_k` is the free energy change contribution for lambda window :math:`k`
+        - :math:`\\sigma_{\\mathrm{Current}}(\\Delta \\widehat{F}_k)` is the current uncertainty in the free energy change contribution for lambda window :math:`k`. This is estimated from inter-run deviations.
+        - :math:`\\Delta \\widehat{F}_k` is the free energy change contribution for lambda window :math:`k`
 
         Parameters
         ----------
@@ -345,6 +371,7 @@ class Stage(_SimulationRunner):
                 self._logger.info(
                     f"Starting {self}. Adaptive equilibration = {adaptive}..."
                 )
+
             elif adaptive:
                 self._logger.info(
                     f"Starting {self}. Adaptive equilibration = {adaptive}..."
@@ -678,28 +705,6 @@ class Stage(_SimulationRunner):
             er_type=er_type, delta_er=delta_er, n_lam_vals=n_lam_vals
         )
 
-    def _get_lam_vals(self) -> _List[float]:
-        """
-        Return list of lambda values for the simulations,
-        based on the configuration file.
-
-        Returns
-        -------
-        lam_vals : List[float]
-            List of lambda values for the simulations.
-        """
-        # Read number of lambda windows from input file
-        lam_vals_str = []
-        with open(self.input_dir + "/somd.cfg", "r") as ifile:
-            lines = ifile.readlines()
-            for line in lines:
-                if line.startswith("lambda array ="):
-                    lam_vals_str = line.split("=")[1].split(",")
-                    break
-        lam_vals = [float(lam) for lam in lam_vals_str]
-
-        return lam_vals
-
     def analyse(
         self,
         slurm: bool = False,
@@ -765,7 +770,9 @@ class Stage(_SimulationRunner):
         for win in self.lam_windows:
             if not win.equilibrated:
                 raise RuntimeError(
-                    "Not all lambda windows have equilibrated. Analysis cannot be performed."
+                    "Not all lambda windows have equilibrated. Analysis cannot be performed. "
+                    "If you are running non-adaptively, please use the `set_equilibration_time` method "
+                    "to set the equilibration time manually."
                 )
             if win.equil_time is None:
                 raise RuntimeError(
@@ -782,36 +789,36 @@ class Stage(_SimulationRunner):
                 for win in self.lam_windows:
                     win._write_equilibrated_simfiles()
 
-                # Run MBAR and compute mean and 95 % C.I. of free energy
-                if not slurm:
-                    free_energies, errors, mbar_outfiles, _ = _run_mbar(
-                        run_nos=run_nos,
-                        output_dir=self.output_dir,
-                        percentage_end=fraction * 100,
-                        percentage_start=0,
-                        subsampling=subsampling,
-                        equilibrated=True,
-                    )
-                else:
-                    jobs, mbar_outfiles, tmp_simfiles = _submit_mbar_slurm(
-                        output_dir=self.output_dir,
-                        virtual_queue=self.virtual_queue,
-                        run_nos=run_nos,
-                        run_somd_dir=self.input_dir,
-                        percentage_end=fraction * 100,
-                        percentage_start=0,
-                        subsampling=subsampling,
-                        equilibrated=True,
-                    )
+            # Run MBAR and compute mean and 95 % C.I. of free energy
+            if not slurm:
+                free_energies, errors, mbar_outfiles, _ = _run_mbar(
+                    run_nos=run_nos,
+                    output_dir=self.output_dir,
+                    percentage_end=fraction * 100,
+                    percentage_start=0,
+                    subsampling=subsampling,
+                    equilibrated=True,
+                )
+            else:
+                jobs, mbar_outfiles, tmp_files = _submit_mbar_slurm(
+                    output_dir=self.output_dir,
+                    virtual_queue=self.virtual_queue,
+                    slurm_config=self.analysis_slurm_config,
+                    run_nos=run_nos,
+                    percentage_end=fraction * 100,
+                    percentage_start=0,
+                    subsampling=subsampling,
+                    equilibrated=True,
+                )
 
-                    free_energies, errors, *_ = _collect_mbar_slurm(
-                        output_dir=self.output_dir,
-                        run_nos=run_nos,
-                        jobs=jobs,
-                        mbar_out_files=mbar_outfiles,
-                        virtual_queue=self.virtual_queue,
-                        tmp_simfiles=tmp_simfiles,
-                    )
+                free_energies, errors, *_ = _collect_mbar_slurm(
+                    output_dir=self.output_dir,
+                    run_nos=run_nos,
+                    jobs=jobs,
+                    mbar_out_files=mbar_outfiles,
+                    virtual_queue=self.virtual_queue,
+                    tmp_files=tmp_files,
+                )
 
                 mean_free_energy = _np.mean(free_energies)
                 # Gaussian 95 % C.I.
@@ -1067,8 +1074,8 @@ class Stage(_SimulationRunner):
                     _submit_mbar_slurm(
                         output_dir=self.output_dir,
                         virtual_queue=self.virtual_queue,
+                        slurm_config=self.analysis_slurm_config,
                         run_nos=run_nos,
-                        run_somd_dir=self.input_dir,
                         percentage_end=end_percent,
                         percentage_start=start_percent,
                         subsampling=False,
@@ -1085,7 +1092,7 @@ class Stage(_SimulationRunner):
                         jobs=jobs,
                         mbar_out_files=mbar_outfiles,
                         virtual_queue=self.virtual_queue,
-                        tmp_simfiles=tmp_simfiles,
+                        tmp_files=tmp_simfiles,
                     )
                 )
 
@@ -1146,30 +1153,24 @@ class Stage(_SimulationRunner):
         base_dir = _pathlib.Path(self.output_dir).parent.resolve()
         _os.rename(self.output_dir, _os.path.join(base_dir, save_name))
 
-    def set_simfile_option(self, option: str, value: str) -> None:
-        """Set the value of an option in the simulation configuration file."""
-        simfile = _os.path.join(self.input_dir, "somd.cfg")
-        _write_simfile_option(simfile, option, value, logger=self._logger)
-        super().set_simfile_option(option, value)
-
     def wait(self) -> None:
         """Wait for the stage to finish running."""
         # Override the base class method so that we can update the
         # virtual queue
         # Give the simulations a chance to start
-        _sleep(30)
+        _sleep(self.slurm_config.queue_check_interval)
         self.virtual_queue.update()
         while self.running:
-            _sleep(30)  # Check every 30 seconds
+            _sleep(self.slurm_config.queue_check_interval)  # Check every 30 seconds
             self.virtual_queue.update()
 
     def _wait_ignoring_thread(self) -> None:
         """Wait for the stage to finish running, ignoring the thread."""
-        _sleep(30)
+        _sleep(self.slurm_config.queue_check_interval)
         self.virtual_queue.update()
         # Superclass implementation of running ignores the thread
         while super().running:
-            _sleep(30)
+            _sleep(self.slurm_config.queue_check_interval)
             self.virtual_queue.update()
 
     @property
@@ -1197,13 +1198,7 @@ class Stage(_SimulationRunner):
             raise RuntimeError("Can't update while ensemble is running")
         if _os.path.isdir(self.output_dir):
             self._mv_output(save_name)
-        # Update the list of lambda windows in the simfile
-        _write_simfile_option(
-            simfile=f"{self.input_dir}/somd.cfg",
-            option="lambda array",
-            value=", ".join([str(lam) for lam in self.lam_vals]),
-        )
-        # Store the previous lambda window attributes that we want to preserve
+
         old_lam_vals_attrs = self.lam_windows[0].__dict__
         self._logger.info("Deleting old lambda windows and creating new ones...")
         self._sub_sim_runners = []
@@ -1220,6 +1215,9 @@ class Stage(_SimulationRunner):
                 base_dir=lam_base_dir,
                 input_dir=self.input_dir,
                 stream_log_level=self.stream_log_level,
+                slurm_config=self.slurm_config,
+                analysis_slurm_config=self.analysis_slurm_config,
+                engine_config=self.engine_config.copy(),
             )
             # Overwrite the default equilibration detection algorithm
             new_lam_win.check_equil = old_lam_vals_attrs["check_equil"]

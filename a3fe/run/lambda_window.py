@@ -20,6 +20,9 @@ from ..analyse.detect_equil import (
 from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._virtual_queue import VirtualQueue as _VirtualQueue
 from .simulation import Simulation as _Simulation
+from ..configuration import SlurmConfig as _SlurmConfig
+from ..configuration import _EngineConfig
+from ..configuration import EngineType as _EngineType
 
 
 class LamWindow(_SimulationRunner):
@@ -50,6 +53,10 @@ class LamWindow(_SimulationRunner):
         input_dir: _Optional[str] = None,
         output_dir: _Optional[str] = None,
         stream_log_level: int = _logging.INFO,
+        slurm_config: _Optional[_SlurmConfig] = None,
+        analysis_slurm_config: _Optional[_SlurmConfig] = None,
+        engine_config: _Optional[_EngineConfig] = None,
+        engine_type: _EngineType = _EngineType.SOMD,
         update_paths: bool = True,
     ) -> None:
         """
@@ -103,6 +110,17 @@ class LamWindow(_SimulationRunner):
         stream_log_level : int, Optional, default: logging.INFO
             Logging level to use for the steam file handlers for the
             Ensemble object and its child objects.
+        slurm_config: SlurmConfig, default: None
+            Configuration for the SLURM job scheduler. If None, the
+            default partition is used.
+        analysis_slurm_config: SlurmConfig, default: None
+            Configuration for the SLURM job scheduler for the analysis.
+            This is helpful e.g. if you want to submit analysis to the CPU
+            partition, but the main simulation to the GPU partition. If None,
+        engine_config: EngineConfig, default: None
+            Configuration for the engine. If None, the default configuration is used.
+        engine_type: EngineType, default: EngineType.SOMD
+            The type of engine to use for the production simulations.
         update_paths: bool, Optional, default: True
             If true, if the simulation runner is loaded by unpickling, then
             update_paths() is called.
@@ -122,6 +140,10 @@ class LamWindow(_SimulationRunner):
             stream_log_level=stream_log_level,
             ensemble_size=ensemble_size,
             update_paths=update_paths,
+            slurm_config=slurm_config,
+            analysis_slurm_config=analysis_slurm_config,
+            engine_config=engine_config,
+            engine_type=engine_type,
             dump=False,
         )
 
@@ -176,6 +198,10 @@ class LamWindow(_SimulationRunner):
                         input_dir=sim_base_dir,
                         output_dir=sim_base_dir,
                         stream_log_level=stream_log_level,
+                        slurm_config=self.slurm_config,
+                        analysis_slurm_config=self.analysis_slurm_config,
+                        engine_config=self.engine_config.copy(),
+                        engine_type=self.engine_type,
                     )
                 )
 
@@ -326,7 +352,14 @@ class LamWindow(_SimulationRunner):
         # Get the index of the first equilibrated data point
         # Minus 1 because first energy is only written after the first nrg_freq steps
         equil_index = (
-            int(self._equil_time / (self.sims[0].timestep * self.sims[0].nrg_freq)) - 1  # type: ignore
+            int(
+                self._equil_time
+                / (
+                    self.sims[0].engine_config.timestep
+                    * self.sims[0].engine_config.energy_frequency
+                )
+            )
+            - 1  # type: ignore
         )
 
         # Write the equilibrated data for each simulation

@@ -58,7 +58,10 @@ def check_equil_block_gradient(
     gradient_threshold = lam_win.gradient_threshold
 
     # Conversion between time and gradient indices.
-    time_to_ind = 1 / (lam_win.sims[0].timestep * lam_win.sims[0].nrg_freq)
+    time_to_ind = 1 / (
+        lam_win.sims[0].engine_config.timestep
+        * lam_win.sims[0].engine_config.energy_frequency
+    )
     idx_block_size = int(lam_win.block_size * time_to_ind)
 
     # Read dh/dl data from all simulations and calculate the gradient of the
@@ -183,7 +186,10 @@ def check_equil_chodera(
     run_nos: _List[int] = lam_win._get_valid_run_nos(run_nos)
 
     # Conversion between time and gradient indices.
-    time_to_ind = 1 / (lam_win.sims[0].timestep * lam_win.sims[0].nrg_freq)
+    time_to_ind = 1 / (
+        lam_win.sims[0].engine_config.timestep
+        * lam_win.sims[0].engine_config.energy_frequency
+    )
 
     # Read dh/dl data from all simulations
     dh_dls = []
@@ -323,7 +329,7 @@ def check_equil_multiwindow(
             equil_time = (
                 _np.sum(
                     [
-                        lam_win.get_total_simtime(run_nos=run_nos)
+                        lam_win.get_tot_simtime(run_nos=run_nos)
                         for lam_win in lambda_windows
                     ]
                 )

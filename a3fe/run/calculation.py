@@ -5,16 +5,18 @@ __all__ = ["Calculation"]
 
 import logging as _logging
 import os as _os
-import shutil as _shutil
+import time as _time
 from typing import List as _List
 from typing import Optional as _Optional
 from pathlib import Path as _Path
 
 from ._simulation_runner import SimulationRunner as _SimulationRunner
-from .enums import LegType as _LegType
-from .enums import PreparationStage as _PreparationStage
+from ..configuration.enums import PreparationStage as _PreparationStage
 from .leg import Leg as _Leg
-from .system_prep import SystemPreparationConfig as _SystemPreparationConfig
+from ..configuration import _BaseSystemPreparationConfig
+from ..configuration import SlurmConfig as _SlurmConfig
+from ..configuration import _EngineConfig
+from ..configuration import EngineType as _EngineType
 
 
 class Calculation(_SimulationRunner):
@@ -24,13 +26,9 @@ class Calculation(_SimulationRunner):
     """
 
     required_input_files = [
-        "run_somd.sh",
         "protein.pdb",
         "ligand.sdf",
-        "template_config.cfg",
     ]  # Waters.pdb is optional
-
-    required_legs = [_LegType.FREE, _LegType.BOUND]
 
     def __init__(
         self,
@@ -41,6 +39,10 @@ class Calculation(_SimulationRunner):
         input_dir: _Optional[str] = None,
         base_dir: _Optional[str] = None,
         stream_log_level: int = _logging.INFO,
+        slurm_config: _Optional[_SlurmConfig] = None,
+        analysis_slurm_config: _Optional[_SlurmConfig] = None,
+        engine_config: _Optional[_EngineConfig] = None,
+        engine_type: _EngineType = _EngineType.SOMD,
         update_paths: bool = True,
     ) -> None:
         """
@@ -75,6 +77,17 @@ class Calculation(_SimulationRunner):
         stream_log_level : int, Optional, default: logging.INFO
             Logging level to use for the steam file handlers for the
             calculation object and its child objects.
+        slurm_config: SlurmConfig, default: None
+            Configuration for the SLURM job scheduler. If None, the
+            default partition is used.
+        analysis_slurm_config: SlurmConfig, default: None
+            Configuration for the SLURM job scheduler for the analysis.
+            This is helpful e.g. if you want to submit analysis to the CPU
+            partition, but the main simulation to the GPU partition. If None,
+        engine_config: EngineConfig, default: None
+            Configuration for the engine. If None, the default configuration is used.
+        engine_type: EngineType, default: EngineType.SOMD
+            The type of engine to use for the production simulations.
         update_paths: bool, Optional, default: True
             If True, if the simulation runner is loaded by unpickling, then
             update_paths() is called.
@@ -90,6 +103,10 @@ class Calculation(_SimulationRunner):
             stream_log_level=stream_log_level,
             ensemble_size=ensemble_size,
             update_paths=update_paths,
+            slurm_config=slurm_config,
+            analysis_slurm_config=analysis_slurm_config,
+            engine_config=engine_config.copy() if engine_config else None,
+            engine_type=engine_type,
             dump=False,
         )
 
@@ -98,9 +115,6 @@ class Calculation(_SimulationRunner):
             self.runtime_constant = runtime_constant
             self.relative_simulation_cost = relative_simulation_cost
             self.setup_complete: bool = False
-
-            # Validate the input
-            self._validate_input()
 
             # Save the state and update log
             self._update_log()
@@ -115,12 +129,15 @@ class Calculation(_SimulationRunner):
         self._logger.info("Modifying/ creating legs")
         self._sub_sim_runners = value
 
-    def _validate_input(self) -> None:
+    def _validate_input(
+        self,
+        sysprep_config: _BaseSystemPreparationConfig,
+    ) -> None:
         """Check that the required input files are present in the input directory."""
         # Check backwards, as we care about the most advanced preparation stage
         for prep_stage in reversed(_PreparationStage):
             files_absent = False
-            for leg_type in Calculation.required_legs:
+            for leg_type in sysprep_config.required_legs:
                 for file in _Leg.required_input_files[leg_type][prep_stage]:
                     if not _os.path.isfile(f"{self.input_dir}/{file}"):
                         files_absent = True
@@ -135,8 +152,8 @@ class Calculation(_SimulationRunner):
         # We didn't find all required files for any of the prep stages
         raise ValueError(
             f"Could not find all required input files for "
-            f"any preparation stage. Required files are: {_Leg.required_input_files[_LegType.BOUND]}"
-            f"and {_Leg.required_input_files[_LegType.FREE]}"
+            f"any preparation stage. Required files are: "
+            f"{[_Leg.required_input_files[leg] for leg in sysprep_config.required_legs]}"
         )
 
     @property
@@ -148,6 +165,10 @@ class Calculation(_SimulationRunner):
                     [min_prep_stage, leg.prep_stage], key=lambda x: x.value
                 )
             self._prep_stage = min_prep_stage
+
+        # Lazy initialization: if not set, infer from input files
+        if not hasattr(self, "_prep_stage"):
+            self._validate_input(self.engine_type.system_prep_config())
 
         return self._prep_stage
 
@@ -162,8 +183,7 @@ class Calculation(_SimulationRunner):
 
     def setup(
         self,
-        bound_leg_sysprep_config: _Optional[_SystemPreparationConfig] = None,
-        free_leg_sysprep_config: _Optional[_SystemPreparationConfig] = None,
+        sysprep_config: _Optional[_BaseSystemPreparationConfig] = None,
     ) -> None:
         """
         Set up the calculation. This involves parametrising, equilibrating, and
@@ -172,11 +192,9 @@ class Calculation(_SimulationRunner):
 
         Parameters
         ----------
-        bound_leg_sysprep_config: SystemPreparationConfig, opttional, default = None
-            The system preparation configuration to use for the bound leg. If None, the default
-            configuration is used.
-        free_leg_sysprep_config: SystemPreparationConfig, opttional, default = None
-            The system preparation configuration to use for the free leg. If None, the default
+        sysprep_config: BaseSystemPreparationConfig, optional, default = None
+            The system preparation configuration to use for all legs. The required legs
+            and stages will be determined from this configuration. If None, the default
             configuration is used.
         """
 
@@ -184,15 +202,21 @@ class Calculation(_SimulationRunner):
             self._logger.info("Setup already complete. Skipping...")
             return
 
-        configs = {
-            _LegType.BOUND: bound_leg_sysprep_config,
-            _LegType.FREE: free_leg_sysprep_config,
-        }
+        # Validate the input
+        if sysprep_config is None:
+            sysprep_config = self.engine_type.system_prep_config()
+
+        self._validate_input(sysprep_config)
+
+        self._logger.info("Starting calculation setup...")
+        setup_start = _time.time()
 
         # Set up the legs
         self.legs = []
-        for leg_type in reversed(Calculation.required_legs):
+        for leg_type in reversed(sysprep_config.required_legs):
             self._logger.info(f"Setting up {leg_type.name.lower()} leg...")
+            leg_start = _time.time()
+
             leg = _Leg(
                 leg_type=leg_type,
                 equil_detection=self.equil_detection,
@@ -202,9 +226,20 @@ class Calculation(_SimulationRunner):
                 input_dir=self.input_dir,
                 base_dir=_os.path.join(self.base_dir, leg_type.name.lower()),
                 stream_log_level=self.stream_log_level,
+                slurm_config=self.slurm_config,
+                analysis_slurm_config=self.analysis_slurm_config,
+                engine_config=self.engine_config,
+                engine_type=self.engine_type,
             )
             self.legs.append(leg)
-            leg.setup(configs[leg_type])
+            leg.setup(sysprep_config)
+
+            self._logger.debug(
+                f"Completed {leg_type.name.lower()} leg setup in {_time.time() - leg_start:.2f}s"
+            )
+
+        total_time = _time.time() - setup_start
+        self._logger.info(f"Calculation setup completed in {total_time:.2f}s")
 
         # Save the state
         self.setup_complete = True
@@ -311,8 +346,8 @@ class Calculation(_SimulationRunner):
         - :math:`t_{\\mathrm{Optimal, k}}` is the calculated optimal runtime for lambda window :math:`k`
         - :math:`t_{\\mathrm{Current}, k}` is the current runtime for lambda window :math:`k`
         - :math:`C` is the runtime constant
-        - :math:`\sigma_{\\mathrm{Current}}(\\Delta \\widehat{F}_k)` is the current uncertainty in the free energy change contribution for lambda window :math:`k`. This is estimated from inter-run deviations.
-        - :math:`\Delta \\widehat{F}_k` is the free energy change contribution for lambda window :math:`k`
+        - :math:`\\sigma_{\\mathrm{Current}}(\\Delta \\widehat{F}_k)` is the current uncertainty in the free energy change contribution for lambda window :math:`k`. This is estimated from inter-run deviations.
+        - :math:`\\Delta \\widehat{F}_k` is the free energy change contribution for lambda window :math:`k`
 
         Parameters
         ----------
@@ -345,16 +380,3 @@ class Calculation(_SimulationRunner):
         super().run(
             run_nos=run_nos, adaptive=adaptive, runtime=runtime, parallel=parallel
         )
-
-    def update_run_somd(self) -> None:
-        """
-        Overwrite the run_somd.sh script in all simulation output dirs with
-        the version currently in the calculation input dir.
-        """
-        master_run_somd = _os.path.join(self.input_dir, "run_somd.sh")
-        for leg in self.legs:
-            for stage in leg.stages:
-                _shutil.copy(master_run_somd, stage.input_dir)
-                for lambda_window in stage.lam_windows:
-                    for simulation in lambda_window.sims:
-                        _shutil.copy(master_run_somd, simulation.input_dir)

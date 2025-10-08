@@ -234,7 +234,7 @@ def submit_mbar_slurm(
     if wait:
         for job in jobs:
             while job in virtual_queue.queue:
-                _sleep(30)
+                _sleep(slurm_config.job_submission_wait)
                 virtual_queue.update()
 
     return jobs, mbar_out_files, tmp_files

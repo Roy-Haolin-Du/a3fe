@@ -1158,19 +1158,19 @@ class Stage(_SimulationRunner):
         # Override the base class method so that we can update the
         # virtual queue
         # Give the simulations a chance to start
-        _sleep(30)
+        _sleep(self.slurm_config.queue_check_interval)
         self.virtual_queue.update()
         while self.running:
-            _sleep(30)  # Check every 30 seconds
+            _sleep(self.slurm_config.queue_check_interval)  # Check every 30 seconds
             self.virtual_queue.update()
 
     def _wait_ignoring_thread(self) -> None:
         """Wait for the stage to finish running, ignoring the thread."""
-        _sleep(30)
+        _sleep(self.slurm_config.queue_check_interval)
         self.virtual_queue.update()
         # Superclass implementation of running ignores the thread
         while super().running:
-            _sleep(30)
+            _sleep(self.slurm_config.queue_check_interval)
             self.virtual_queue.update()
 
     @property

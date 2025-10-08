@@ -33,6 +33,8 @@ class SlurmConfig(_BaseModel):
     extra_options: _Dict[str, str] = _Field(
         {}, description="Extra options to pass to SLURM. For example, {'account': 'qt'}"
     )
+    queue_check_interval: int = _Field(30, ge=1, description="Interval in seconds between SLURM queue status checks.")
+    job_submission_wait: int = _Field(300, ge=1, description="Wait time in seconds for job submission to SLURM queue.")
 
     model_config = _ConfigDict(validate_assignment=True)
 

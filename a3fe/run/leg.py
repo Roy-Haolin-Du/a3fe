@@ -788,14 +788,14 @@ class Leg(_SimulationRunner):
             self._logger.info(
                 f"Waiting for job {job} to be submitted to the real slurm queue"
             )
-            _sleep(5 * 60)
+            _sleep(self.slurm_config.job_submission_wait)
             self.virtual_queue.update()
 
         # Wait for the job to complete if we've specified wait
         if wait:
             while job in self.virtual_queue.queue:
                 self._logger.info(f"Waiting for job {job} to complete")
-                _sleep(30)
+                _sleep(self.slurm_config.queue_check_interval)
                 self.virtual_queue.update()
 
     def run(

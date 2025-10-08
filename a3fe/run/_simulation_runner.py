@@ -667,9 +667,9 @@ class SimulationRunner(ABC):
     def wait(self) -> None:
         f"""Wait for the {self.__class__.__name__} to finish running."""
         # Give the simulation runner a chance to start
-        _sleep(30)
+        _sleep(self.slurm_config.queue_check_interval)
         while self.running:
-            _sleep(30)  # Check every 30 seconds
+            _sleep(self.slurm_config.queue_check_interval)  # Check every 30 seconds
 
     def get_tot_simtime(self, run_nos: _Optional[_List[int]] = None) -> float:
         f"""

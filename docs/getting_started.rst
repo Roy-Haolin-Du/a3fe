@@ -51,16 +51,16 @@ Some handy commands and code snippets, assuming that you have set up the calcula
 
 .. code-block:: python
 
-    print(f"Total GPU hours: {calc.tot_gpu_time:0.f}")
+    print(f"Total GPU hours: {calc.tot_gpu_time:0.2f}")
     print("#"*10)
     for leg in calc.legs:
-        print(f"Total GPU hours for leg {leg.leg_type}: {leg.tot_gpu_time:.0f}")
+        print(f"Total GPU hours for leg {leg.leg_type}: {leg.tot_gpu_time:.2f}")
 
 **Get a detailed summary of free energy components as a pandas dataframe**:
 
 .. code-block:: python
 
-    df = calc.get_summary_df()
+    df = calc.get_results_df()
     print(df)
 
 **Save the current state of the calculation**:

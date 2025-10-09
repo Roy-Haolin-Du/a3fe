@@ -1,6 +1,6 @@
 Getting Started
 ===============
-a3fe is a package for running alchemical absolute binding free energy calculations with SOMD (Sire / OpenMM Molecular Dynamics) through SLURM. 
+a3fe is a package for running alchemical absolute binding free energy calculations with SOMD (Sire / OpenMM Molecular Dynamics) through SLURM.
 It is based on Sire(https://sire.openbiosim.org/) and also uses BioSimSpace(https://biosimspace.openbiosim.org/) during the set-up stages. For a
 discussion of the algorithms used, please see (https://pubs.acs.org/doi/10.1021/acs.jctc.4c00806).
 
@@ -10,14 +10,14 @@ Please see the instructions in the github repo README (https://github.com/michel
 
 Quick Start
 ***********
-- Activate your a3fe conda environment 
+- Activate your a3fe conda environment
 - Create a base directory for the calculation and create an directory called ``input`` within this
 - Move your input files into the the input directory. For example, if you have parameterised AMBER-format input files, name these bound_param.rst7, bound_param.prm7, free_param.rst7, and free_param.prm7. **Ensure that the ligand is named LIG and is the first molecule in the system.** For more details see :ref:`Preparing Input for a3fe`. Alternatively, copy the pre-provided input from ``a3fe/a3fe/data/example_run_dir/input`` to your input directory.
 - In the calculation base directory, run the following python code, either through ipython or as a python script (you will likely want to run this with ``nohup``/ through tmux to ensure that the calculation is not killed when you lose connection). Running though ipython will let you interact with the calculation while it's running.
 
 .. code-block:: python
 
-    import a3fe as a3 
+    import a3fe as a3
     calc = a3.Calculation(ensemble_size=5) # Run with 5 independent replicates and default engine is SOMD
     calc.setup()
     calc.get_optimal_lam_vals()

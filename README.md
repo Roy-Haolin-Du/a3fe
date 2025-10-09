@@ -27,7 +27,7 @@ Additionally, please cite the underlying software that makes a3fe possible:
 
 - **Sire**: Christopher J. Woods, Lester O. Hedges, Adrian J. Mulholland, Maturos Malaisree, Paolo Tosco, Hannes H. Loeffler, Miroslav Suruzhon, Matthew Burman, Sofia Bariami, Stefano Bosisio, Gaetano Calabro, Finlay Clark, Antonia S. J. S. Mey, Julien Michel; Sire: An interoperability engine for prototyping algorithms and exchanging information between molecular simulation programs. J. Chem. Phys. 28 May 2024; 160 (20): 202503. https://doi.org/10.1063/5.0200458
 
-- **BioSimSpace**: 
+- **BioSimSpace**:
   - Hedges, L. O., Bariami, S., Burman, M., Clark, F., Cossins, B. P., Hardie, A., … Wu, Z. (2023). A Suite of Tutorials for the BioSimSpace Framework for Interoperable Biomolecular Simulation [Article v1.0]. Living Journal of Computational Molecular Science, 5(1), 2375. https://doi.org/10.33011/livecoms.5.1.2375
   - Hedges et al., (2019). BioSimSpace: An interoperable Python framework for biomolecular simulation. Journal of Open Source Software, 4(43), 1831, https://doi.org/10.21105/joss.01831
 

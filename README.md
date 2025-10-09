@@ -15,6 +15,22 @@ For details of the algorithms and testing, please see the assocated paper:
 
 **Clark, F.; Robb, G. R.; Cole, D. J.; Michel, J. Automated Adaptive Absolute Binding Free Energy Calculations. J. Chem. Theory Comput. 2024, 20 (18), 7806–7828. https://doi.org/10.1021/acs.jctc.4c00806.**
 
+### Citation
+
+If you use a3fe in your research, please cite:
+
+- **Software**: Clark, F., & Du, . (Haolin) R. (2025). a3fe: Automated Adaptive Absolute alchemical Free Energy calculator (0.4.0). Zenodo. https://doi.org/10.5281/zenodo.17298077.
+
+- **Paper**: Clark, F.; Robb, G. R.; Cole, D. J.; Michel, J. Automated Adaptive Absolute Binding Free Energy Calculations. J. Chem. Theory Comput. 2024, 20 (18), 7806–7828. https://doi.org/10.1021/acs.jctc.4c00806.
+
+Additionally, please cite the underlying software that makes a3fe possible:
+
+- **Sire**: Christopher J. Woods, Lester O. Hedges, Adrian J. Mulholland, Maturos Malaisree, Paolo Tosco, Hannes H. Loeffler, Miroslav Suruzhon, Matthew Burman, Sofia Bariami, Stefano Bosisio, Gaetano Calabro, Finlay Clark, Antonia S. J. S. Mey, Julien Michel; Sire: An interoperability engine for prototyping algorithms and exchanging information between molecular simulation programs. J. Chem. Phys. 28 May 2024; 160 (20): 202503. https://doi.org/10.1063/5.0200458
+
+- **BioSimSpace**:
+  - Hedges, L. O., Bariami, S., Burman, M., Clark, F., Cossins, B. P., Hardie, A., … Wu, Z. (2023). A Suite of Tutorials for the BioSimSpace Framework for Interoperable Biomolecular Simulation [Article v1.0]. Living Journal of Computational Molecular Science, 5(1), 2375. https://doi.org/10.33011/livecoms.5.1.2375
+  - Hedges et al., (2019). BioSimSpace: An interoperable Python framework for biomolecular simulation. Journal of Open Source Software, 4(43), 1831, https://doi.org/10.21105/joss.01831
+
 ### Installation
 
 a3fe depends on SLURM for scheduling jobs, and on GROMACS for running initial equilibration simulations. Please ensure that your have sourced your GMXRC or loaded your GROMACS module before proceeding with the installation. While we recommend installing with [mamba](https://mamba.readthedocs.io/en/latest/installation/mamba-installation.html), you can substitute `mamba` with `conda` in the following commands.

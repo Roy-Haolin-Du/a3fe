@@ -1,4 +1,4 @@
-"""Functionality to run a single SOMD simulation."""
+"""Functionality to run a single simulation."""
 
 __all__ = ["Simulation"]
 
@@ -14,23 +14,29 @@ from typing import Tuple as _Tuple
 import numpy as _np
 from sire.units import k_boltz as _k_boltz
 
-from ._simulation_runner import SimulationRunner as _SimulationRunner
-from ._virtual_queue import Job as _Job
-from ._virtual_queue import VirtualQueue as _VirtualQueue
+from ..configuration import EngineType as _EngineType
 from ..configuration import JobStatus as _JobStatus
 from ..configuration import SlurmConfig as _SlurmConfig
 from ..configuration import _EngineConfig
-from ..configuration import EngineType as _EngineType
+from ._simulation_runner import SimulationRunner as _SimulationRunner
+from ._virtual_queue import Job as _Job
+from ._virtual_queue import VirtualQueue as _VirtualQueue
 
 
 class Simulation(_SimulationRunner):
     """Class to store information about a single SOMD simulation."""
 
-    required_input_files = [
-        "somd.prm7",
-        "somd.rst7",
-        "somd.pert",
-    ]
+    required_input_files = {
+        _EngineType.SOMD: [
+            "somd.prm7",
+            "somd.rst7",
+            "somd.pert",
+        ],
+        _EngineType.GROMACS: [
+            "gromacs.top",
+            "gromacs.gro",
+        ],
+    }
 
     # Files to be cleaned by self.clean()
     run_files = _SimulationRunner.run_files + [
@@ -212,37 +218,59 @@ class Simulation(_SimulationRunner):
             raise FileNotFoundError("Input directory does not exist.")
 
         # Check that the required input files are present
-        for file in Simulation.required_input_files:
+        for file in Simulation.required_input_files[self.engine_type]:
             if not _os.path.isfile(_os.path.join(self.input_dir, file)):
                 raise FileNotFoundError("Required input file " + file + " not found.")
 
     def _select_input_files(self) -> None:
         """Select the correct rst7 and, if supplied, restraints,
         according to the run number."""
+        if self.engine_type == _EngineType.SOMD:
+            # Check if we have multiple rst7 files, or only one
+            rst7_files = _glob.glob(_os.path.join(self.input_dir, "*.rst7"))
+            if len(rst7_files) == 0:
+                raise FileNotFoundError("No rst7 files found in input directory")
+            elif len(rst7_files) > 1:
+                # Rename the rst7 file for this run to somd.rst7 and delete any other
+                # rst7 files
+                self._logger.debug("Multiple rst7 files found - renaming")
+                _subprocess.run(
+                    [
+                        "mv",
+                        _os.path.join(self.input_dir, f"somd_{self.run_no}.rst7"),
+                        _os.path.join(self.input_dir, "somd.rst7"),
+                    ]
+                )
+                unwanted_rst7_files = _glob.glob(
+                    _os.path.join(self.input_dir, "somd_?.rst7")
+                )
+                for file in unwanted_rst7_files:
+                    _subprocess.run(["rm", file])
+            else:
+                self._logger.info("Only one rst7 file found - not renaming")
 
-        # Check if we have multiple rst7 files, or only one
-        rst7_files = _glob.glob(_os.path.join(self.input_dir, "*.rst7"))
-        if len(rst7_files) == 0:
-            raise FileNotFoundError("No rst7 files found in input directory")
-        elif len(rst7_files) > 1:
-            # Rename the rst7 file for this run to somd.rst7 and delete any other
-            # rst7 files
-            self._logger.debug("Multiple rst7 files found - renaming")
-            _subprocess.run(
-                [
-                    "mv",
-                    _os.path.join(self.input_dir, f"somd_{self.run_no}.rst7"),
-                    _os.path.join(self.input_dir, "somd.rst7"),
-                ]
-            )
-            unwanted_rst7_files = _glob.glob(
-                _os.path.join(self.input_dir, "somd_?.rst7")
-            )
-            for file in unwanted_rst7_files:
-                _subprocess.run(["rm", file])
+        elif self.engine_type == _EngineType.GROMACS:
+            gro_files = _glob.glob(_os.path.join(self.input_dir, "*.gro"))
+            if len(gro_files) == 0:
+                raise FileNotFoundError("No gro files found in input directory")
+            elif len(gro_files) > 1:
+                self._logger.debug("Multiple gro files found - renaming")
+                _subprocess.run(
+                    [
+                        "mv",
+                        _os.path.join(self.input_dir, f"gromacs_{self.run_no}.gro"),
+                        _os.path.join(self.input_dir, "gromacs.gro"),
+                    ]
+                )
+                unwanted_gro_files = _glob.glob(
+                    _os.path.join(self.input_dir, "gromacs_?.gro")
+                )
+                for file in unwanted_gro_files:
+                    _subprocess.run(["rm", file])
+            else:
+                self._logger.info("Only one gro file found - not renaming")
         else:
-            self._logger.info("Only one rst7 file found - not renaming")
-
+            raise ValueError(f"Engine type {self.engine_type} not supported")
         # Deal with restraints. Get the name of the restraint file for this run
         old_restr_file = _os.path.join(self.input_dir, f"restraint_{self.run_no}.txt")
 
@@ -285,14 +313,21 @@ class Simulation(_SimulationRunner):
         None
         """
         # Write updated config to file
-        self.engine_config.write_config(
-            run_dir=self.output_dir,
-            lambda_val=self.lam,
-            runtime=runtime,
-            top_file="somd.prm7",  # TODO - make generic
-            coord_file="somd.rst7",  # TODO - make generic
-            morph_file="somd.pert",  # TODO - make generic
-        )
+        if self.engine_type == _EngineType.SOMD:
+            self.engine_config.write_config(
+                run_dir=self.output_dir,
+                lambda_val=self.lam,
+                runtime=runtime,
+                top_file="somd.prm7",
+                coord_file="somd.rst7",
+                morph_file="somd.pert",
+            )
+        else:  # GROMACS
+            self.engine_config.write_all_stage_configs(
+                run_dir=self.output_dir,
+                lambda_val=self.lam,
+                runtime=runtime,
+            )
 
         # Get the commands to run the simulation
         cmd = self.engine_config.get_run_cmd(self.lam)

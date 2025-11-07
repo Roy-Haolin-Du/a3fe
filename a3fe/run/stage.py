@@ -9,7 +9,6 @@ import pathlib as _pathlib
 import threading as _threading
 from copy import deepcopy as _deepcopy
 from math import ceil as _ceil
-import matplotlib.pyplot as _plt
 from multiprocessing import get_context as _get_context
 from time import sleep as _sleep
 from typing import Any as _Any
@@ -20,6 +19,7 @@ from typing import Optional as _Optional
 from typing import Tuple as _Tuple
 from typing import Union as _Union
 
+import matplotlib.pyplot as _plt
 import numpy as _np
 import pandas as _pd
 import scipy.stats as _stats
@@ -49,13 +49,13 @@ from ..analyse.plot import plot_overlap_mats as _plot_overlap_mats
 from ..analyse.plot import plot_rmsds as _plot_rmsds
 from ..analyse.plot import plot_sq_sem_convergence as _plot_sq_sem_convergence
 from ..analyse.process_grads import GradientData as _GradientData
+from ..configuration import EngineType as _EngineType
+from ..configuration import SlurmConfig as _SlurmConfig
+from ..configuration import StageType as _StageType
+from ..configuration import _EngineConfig
 from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._virtual_queue import VirtualQueue as _VirtualQueue
-from ..configuration import StageType as _StageType
 from .lambda_window import LamWindow as _LamWindow
-from ..configuration import SlurmConfig as _SlurmConfig
-from ..configuration import _EngineConfig
-from ..configuration import EngineType as _EngineType
 
 
 class Stage(_SimulationRunner):
@@ -790,8 +790,10 @@ class Stage(_SimulationRunner):
                     win._write_equilibrated_simfiles()
 
             # Run MBAR and compute mean and 95 % C.I. of free energy
-            if not slurm:
+            # GROMACS doesn't need SLURM (Python function can use multiprocessing)
+            if not slurm or self.engine_type == _EngineType.GROMACS:
                 free_energies, errors, mbar_outfiles, _ = _run_mbar(
+                    engine_type=self.engine_type,
                     run_nos=run_nos,
                     output_dir=self.output_dir,
                     percentage_end=fraction * 100,
@@ -1046,7 +1048,8 @@ class Stage(_SimulationRunner):
             for win in self.lam_windows:
                 win._write_equilibrated_simfiles()
 
-        if not slurm:
+        # GROMACS doesn't need SLURM (Python function can use multiprocessing)
+        if not slurm or self.engine_type == _EngineType.GROMACS:
             # Now run mbar with multiprocessing to speed things up
             with _get_context("spawn").Pool() as pool:
                 results = pool.starmap(
@@ -1060,13 +1063,14 @@ class Stage(_SimulationRunner):
                             False,  # Subsample
                             True,  # Delete output files
                             equilibrated,  # Equilibrated
+                            self.engine_type,
                         )
                         for start_percent, end_percent in zip(
                             start_percents, end_percents
                         )
                     ],
                 )
-        else:  # Use slurm
+        else:  # Use SLURM (SOMD only)
             frac_jobs = []
             results = []
             for start_percent, end_percent in zip(start_percents, end_percents):

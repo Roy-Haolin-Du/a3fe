@@ -2,25 +2,39 @@
 
 __all__ = [
     "SomdConfig",
+    "GromacsConfig",
 ]
 
 import os as _os
+from abc import ABC as _ABC
+from abc import abstractmethod as _abstractmethod
 from decimal import Decimal as _Decimal
 from typing import (
     Dict as _Dict,
-    Literal as _Literal,
+)
+from typing import (
     List as _List,
-    Union as _Union,
+)
+from typing import (
+    Literal as _Literal,
+)
+from typing import (
     Optional as _Optional,
 )
-from pydantic import (
-    BaseModel as _BaseModel,
-    Field as _Field,
-    model_validator as _model_validator,
+from typing import (
+    Union as _Union,
 )
 
 import yaml as _yaml
-from abc import ABC as _ABC, abstractmethod as _abstractmethod
+from pydantic import (
+    BaseModel as _BaseModel,
+)
+from pydantic import (
+    Field as _Field,
+)
+from pydantic import (
+    model_validator as _model_validator,
+)
 
 
 class _EngineConfig(_BaseModel, _ABC):
@@ -93,6 +107,12 @@ class _EngineConfig(_BaseModel, _ABC):
     def get_run_cmd(self) -> str:
         """
         Get the command to run the simulation.
+        """
+        pass
+
+    def setup_lambda_arrays(self, stage_type) -> None:
+        """
+        Make sure GROMACS has the same stages as SOMD.
         """
         pass
 
@@ -431,3 +451,712 @@ class SomdConfig(_EngineConfig):
         Get the command to run the simulation.
         """
         return f"somd-freenrg -C {self.get_file_name()} -l {lam} -p CUDA"
+
+
+class GromacsConfig(_EngineConfig):
+    """
+    Pydantic model for holding GROMACS engine configuration.
+    Based on fragment-opt-abfe-benchmark mdp format with 4fs timestep.
+    """
+
+    ### Simulation Type ###
+    mdp_type: _Literal["em", "nvt", "npt", "npt-norest", "prod"] = _Field(
+        "prod", description="Type of simulation"
+    )
+
+    ### Run Control ###
+    define: _Optional[str] = _Field(
+        None, description="Preprocessor defines (e.g., -DPOSRES, -DFLEXIBLE)"
+    )
+    integrator: _Literal["sd", "steep", "md"] = _Field(
+        "sd", description="Integrator type"
+    )
+    nsteps: int = _Field(5000000, description="Number of MD steps")
+    dt: float = _Field(0.002, description="Timestep in ps (2 fs)")
+    comm_mode: _Literal["Linear", "Angular", "None"] = _Field(
+        "Linear", description="Center of mass motion removal"
+    )
+    nstcomm: int = _Field(50, description="Frequency for COM removal")
+    emtol: _Optional[float] = _Field(
+        None, description="Energy minimization tolerance (for EM)"
+    )
+    emstep: _Optional[float] = _Field(None, description="Initial step size for EM")
+    pbc: _Literal["xyz", "xy", "no"] = _Field("xyz", description="PBC type")
+
+    ### Output Control ###
+    nstxout: int = _Field(0, description="Write coords to .trr")
+    nstvout: int = _Field(0, description="Write velocities to .trr")
+    nstfout: int = _Field(0, description="Write forces to .trr")
+    nstxout_compressed: int = _Field(500, description="Write compressed trajectory")
+    compressed_x_precision: int = _Field(1000, description="Compressed precision")
+    nstlog: int = _Field(500, description="Update log file")
+    nstenergy: int = _Field(500, description="Save energies")
+    nstcalcenergy: int = _Field(50, description="Calculate energies")
+
+    ### Bonds ###
+    constraint_algorithm: _Literal["lincs", "shake"] = _Field(
+        "lincs", description="Constraint algorithm"
+    )
+    constraints: _Literal["none", "h-bonds", "all-bonds"] = _Field(
+        "h-bonds", description="Constraint type (none/h-bonds/all-bonds)"
+    )
+    lincs_iter: int = _Field(1, description="LINCS iterations")
+    lincs_order: int = _Field(6, description="LINCS order")
+    lincs_warnangle: int = _Field(30, description="LINCS warning angle")
+    continuation: _Literal["yes", "no"] = _Field("yes", description="Continuation")
+
+    ### Neighbor Searching ###
+    cutoff_scheme: _Literal["Verlet", "group"] = _Field(
+        "Verlet", description="Cutoff scheme"
+    )
+    ns_type: _Literal["grid", "simple"] = _Field("grid", description="Neighbor search")
+    nstlist: int = _Field(20, description="Update neighbor list")
+    rlist: float = _Field(1.2, description="Neighbor list cutoff (nm)")
+
+    ### Electrostatics ###
+    coulombtype: _Literal["PME", "Cut-off"] = _Field("PME", description="Coulomb type")
+    rcoulomb: float = _Field(1.0, description="Coulomb cutoff (nm)")
+    ewald_geometry: _Literal["3d", "3dc"] = _Field("3d", description="Ewald geometry")
+    pme_order: int = _Field(4, description="PME order")
+    fourierspacing: float = _Field(0.10, description="PME grid spacing (nm)")
+    ewald_rtol: float = _Field(1e-6, description="Ewald tolerance")
+
+    ### VDW ###
+    vdwtype: _Literal["Cut-off", "PME"] = _Field("Cut-off", description="VdW type")
+    vdw_modifier: _Literal["Potential-shift-Verlet", "None"] = _Field(
+        "Potential-shift-Verlet", description="VdW modifier"
+    )
+    verlet_buffer_tolerance: float = _Field(
+        0.005, description="Verlet buffer tolerance"
+    )
+    rvdw: float = _Field(1.0, description="VdW cutoff (nm)")
+    DispCorr: _Literal["EnerPres", "Ener", "no"] = _Field(
+        "EnerPres", description="Long range dispersion corrections"
+    )
+
+    ### Temperature Coupling ###
+    tcoupl: _Literal["no", "yes"] = _Field("no", description="Temperature coupling")
+    tc_grps: str = _Field("System", description="Temperature coupling groups")
+    tau_t: float = _Field(2.0, description="Time constant for T-coupling (ps)")
+    ref_t: float = _Field(298.15, description="Reference temperature (K)")
+
+    ### Pressure Coupling ###
+    pcoupl: _Literal["no", "Berendsen", "C-rescale", "Parrinello-Rahman"] = _Field(
+        "Parrinello-Rahman", description="Pressure coupling"
+    )
+    pcoupltype: _Literal["isotropic", "semiisotropic"] = _Field(
+        "isotropic", description="Pressure coupling type"
+    )
+    tau_p: float = _Field(2.0, description="Time constant for P-coupling (ps)")
+    ref_p: float = _Field(1.01325, description="Reference pressure (bar)")
+    compressibility: float = _Field(4.5e-5, description="Compressibility (bar^-1)")
+    refcoord_scaling: _Optional[_Literal["all", "com", "no"]] = _Field(
+        None, description="Reference coordinate scaling"
+    )
+
+    ### Velocity Generation ###
+    gen_vel: _Literal["yes", "no"] = _Field("no", description="Generate velocities")
+    gen_seed: int = _Field(-1, description="Random seed")
+    gen_temp: float = _Field(298.15, description="Generation temperature (K)")
+
+    ### Restraints (for interface compatibility, not used in MDP generation) ###
+    use_boresch_restraints: bool = _Field(
+        False,
+        description="Use Boresch restraints mode (interface compatibility, handled in topology)",
+    )
+    turn_on_receptor_ligand_restraints: bool = _Field(
+        False,
+        description="Turn on receptor-ligand restraints mode (interface compatibility, handled in topology)",
+    )
+    boresch_restraints_dictionary: _Optional[str] = _Field(
+        None,
+        description="Boresch restraints dictionary content (interface compatibility, handled in topology)",
+    )
+
+    ### Free Energy ###
+    perturbed_residue_number: int = _Field(
+        1,
+        alias="perturbed residue number",
+        ge=1,
+        description="Residue number to perturb. Must be >= 1",
+    )
+
+    ligand_charge: int = _Field(
+        0,
+        description="Net charge of the ligand. If non-zero, must use PME for electrostatics.",
+    )
+
+    free_energy: _Literal["yes", "no"] = _Field("yes", description="Enable FEP")
+    couple_moltype: str = _Field(
+        "LIG", description="Molecule type to couple (e.g., 'LIG')"
+    )
+
+    couple_lambda0: str = _Field(
+        "vdw-q",
+        description="Interactions at lambda=0 (e.g., 'vdw-q', 'vdw', 'q', 'none')",
+    )
+
+    couple_lambda1: str = _Field(
+        "none",
+        description="Interactions at lambda=1 (e.g., 'vdw-q', 'vdw', 'q', 'none')",
+    )
+    sc_alpha: float = _Field(0.5, description="Soft-core alpha")
+    sc_power: int = _Field(1, description="Soft-core power")
+    sc_sigma: float = _Field(0.3, description="Soft-core sigma (nm)")
+    init_lambda_state: _Optional[int] = _Field(None, description="Initial lambda state")
+
+    lambda_values: _Optional[_List[float]] = _Field(
+        None, description="Lambda values for this stage (set by system_prep_config)"
+    )
+
+    bonded_lambdas: _Optional[_List[float]] = _Field(
+        None, description="Bonded lambda values"
+    )
+    coul_lambdas: _Optional[_List[float]] = _Field(
+        None, description="Coulomb lambda values"
+    )
+    vdw_lambdas: _Optional[_List[float]] = _Field(None, description="VdW lambda values")
+
+    nstdhdl: int = _Field(100, description="Frequency to write dH/dlambda")
+    dhdl_print_energy: _Literal["total", "potential"] = _Field(
+        "total", description="dH/dlambda energy output"
+    )
+    calc_lambda_neighbors: int = _Field(
+        -1,
+        description="Lambda neighbors to calculate (-1 = all for MBAR, 1 = adjacent for BAR)",
+    )
+    separate_dhdl_file: _Literal["yes", "no"] = _Field(
+        "yes", description="Separate dH/dlambda file"
+    )
+    couple_intramol: _Literal["yes", "no"] = _Field(
+        "yes", description="Couple intramolecular"
+    )
+
+    ### Extra options ###
+    extra_options: _Dict[str, str] = _Field(
+        default_factory=dict, description="Extra options"
+    )
+
+    @staticmethod
+    def get_file_name() -> str:
+        return "gromacs.mdp"
+
+    def setup_lambda_arrays(self, stage_type) -> None:
+        """
+        Set up GROMACS-specific bonded/coul/vdw lambda arrays.
+
+        Parameters
+        ----------
+        stage_type : StageType
+            The type of stage (RESTRAIN, DISCHARGE, or VANISH)
+        """
+        if self.lambda_values is None:
+            raise ValueError(
+                "lambda_values must be set before calling _get_lambda_arrays_for_stage(). "
+                "This should be set from GromacsSystemPreparationConfig."
+            )
+
+        stage = stage_type.name.lower()
+
+        if stage == "restrain":
+            self.bonded_lambdas = self.lambda_values
+            self.coul_lambdas = None
+            self.vdw_lambdas = None
+        elif stage == "discharge":
+            self.bonded_lambdas = [1.0] * len(self.lambda_values)
+            self.coul_lambdas = self.lambda_values
+            self.vdw_lambdas = None
+        elif stage == "vanish":
+            self.bonded_lambdas = [1.0] * len(self.lambda_values)
+            self.coul_lambdas = None
+            self.vdw_lambdas = self.lambda_values
+        else:
+            raise ValueError(f"Unknown stage type: {stage}")
+
+    def _configure_for_mdp_type(self) -> None:
+        """
+        Configure parameters based on mdp_type.
+        Resets all parameters to GROMACS defaults first, then applies stage-specific settings.
+        """
+        # Reset all parameters to MD defaults (for nvt/npt/prod)
+        self.integrator = "sd"
+        self.constraints = "h-bonds"
+        self.tcoupl = "yes"
+        self.pcoupl = "Parrinello-Rahman"
+        self.continuation = "yes"
+        self.gen_vel = "no"
+        self.tau_p = 2.0
+        self.nstcomm = 50
+        self.nstlist = 20
+
+        # Apply stage-specific settings
+        if self.mdp_type == "em":
+            # EM is completely different from MD
+            self.integrator = "steep"
+            self.constraints = "none"
+            self.tcoupl = "no"
+            self.pcoupl = "no"
+            self.gen_vel = "no"
+            self.nsteps = 50000
+            self.emtol = 10
+            self.emstep = 0.01
+            self.nstcomm = 100
+            self.nstxout = 250
+            self.nstlist = 1
+
+        elif self.mdp_type == "nvt":
+            self.nsteps = 5000  # 10 ps
+            self.continuation = "no"
+            self.gen_vel = "yes"
+            self.pcoupl = "no"
+            self.nstxout = 25000
+
+        elif self.mdp_type == "npt":
+            self.nsteps = 50000  # 100 ps
+            self.pcoupl = "C-rescale"  # GROMACS 2025
+            self.tau_p = 1.0
+            self.refcoord_scaling = "all"
+            self.nstxout = 25000
+
+        elif self.mdp_type == "npt-norest":
+            self.nsteps = 250000  # 500 ps
+            self.nstxout = 25000
+
+        else:  # prod
+            self.nsteps = 10000000  # 20 ns (will be overridden by runtime)
+            self.nstxout = 0
+
+    def write_config(
+        self,
+        run_dir: str,
+        lambda_val: float,
+        runtime: float,
+        top_file: str = "",
+        coord_file: str = "",
+        morph_file: str = "",
+    ) -> None:
+        """
+        Generate GROMACS mdp file matching fragment-opt-abfe-benchmark format.
+        """
+        # Configure based on type
+        self._configure_for_mdp_type()
+
+        # Override nsteps for prod based on runtime
+        if self.mdp_type == "prod":
+            runtime_ps = runtime * 1000
+            self.nsteps = int(runtime_ps / self.dt)
+
+        # Find lambda state index from the active lambda array
+        if self.bonded_lambdas and not self.coul_lambdas and not self.vdw_lambdas:
+            lambda_array = self.bonded_lambdas
+        elif self.coul_lambdas:
+            lambda_array = self.coul_lambdas
+        elif self.vdw_lambdas:
+            lambda_array = self.vdw_lambdas
+        else:
+            raise ValueError("No lambda arrays set.")
+
+        try:
+            self.init_lambda_state = lambda_array.index(lambda_val)
+        except ValueError:
+            raise ValueError(f"Lambda {lambda_val} not found in {lambda_array}")
+
+        # Build mdp content
+        mdp_lines = [
+            ";====================================================",
+            f"; {self.mdp_type.upper().replace('-', ' ')} {'simulation' if self.mdp_type != 'em' else ''}".strip(),
+            ";====================================================",
+            "",
+        ]
+
+        # Run Control
+        if self.mdp_type == "em":
+            mdp_lines.extend(
+                [
+                    ";----------------------------------------------------",
+                    "; RUN CONTROL & MINIMIZATION",
+                    ";----------------------------------------------------",
+                ]
+            )
+            if self.define:
+                mdp_lines.append(f"define                 = {self.define}")
+            mdp_lines.extend(
+                [
+                    f"integrator             = {self.integrator}",
+                    f"nsteps                 = {self.nsteps}",
+                    f"emtol                  = {self.emtol}",
+                    f"emstep                 = {self.emstep}",
+                    f"nstcomm                = {self.nstcomm}",
+                    f"pbc                    = {self.pbc}",
+                ]
+            )
+        else:
+            mdp_lines.extend(
+                [
+                    "; RUN CONTROL",
+                    ";----------------------------------------------------",
+                ]
+            )
+            if self.define:
+                mdp_lines.append(f"define       = {self.define}")
+            mdp_lines.extend(
+                [
+                    f"integrator   = {self.integrator:<13} ; langevin integrator",
+                    f"nsteps       = {self.nsteps:<13} ; {self.dt} * {self.nsteps} fs = {self.nsteps * self.dt * 0.001:.0f} ps",
+                    f"dt           = {self.dt:<13} ; {self.dt * 1000:.0f} fs",
+                    f"comm-mode    = {self.comm_mode:<13} ; remove center of mass translation",
+                    f"nstcomm      = {self.nstcomm:<13} ; frequency for center of mass motion removal",
+                ]
+            )
+
+        # Output Control
+        mdp_lines.extend(
+            [
+                "",
+                "; OUTPUT CONTROL"
+                if self.mdp_type != "em"
+                else ";----------------------------------------------------",
+                ""
+                if self.mdp_type == "em"
+                else ";----------------------------------------------------",
+                f"nstxout                = {self.nstxout:<10} ; "
+                + (
+                    "save coordinates to .trr every " + str(self.nstxout) + " steps"
+                    if self.nstxout > 0
+                    else "don't save coordinates to .trr"
+                ),
+                f"nstvout                = {self.nstvout:<10} ; don't save velocities to .trr",
+                f"nstfout                = {self.nstfout:<10} ; don't save forces to .trr",
+                "",
+                f"nstxout-compressed     = {self.nstxout_compressed:<10} ; xtc compressed trajectory output every {self.nstxout_compressed} steps",
+                f"compressed-x-precision = {self.compressed_x_precision}",
+                f"nstlog                 = {self.nstlog:<10} ; update log file every {self.nstlog} steps",
+                f"nstenergy              = {self.nstenergy:<10} ; save energies every {self.nstenergy} steps",
+                f"nstcalcenergy          = {self.nstcalcenergy}",
+                "",
+            ]
+        )
+
+        # Neighbor Searching
+        if self.mdp_type == "em":
+            mdp_lines.extend(
+                [
+                    ";----------------------------------------------------",
+                    "; NEIGHBOR SEARCHING",
+                    ";----------------------------------------------------",
+                    f"cutoff-scheme          = {self.cutoff_scheme}",
+                    f"ns-type                = {self.ns_type}",
+                    f"nstlist                = {self.nstlist}",
+                    f"rlist                  = {self.rlist}",
+                    "",
+                ]
+            )
+        else:
+            mdp_lines.extend(
+                [
+                    "; NEIGHBOR SEARCHING"
+                    if self.mdp_type == "nvt"
+                    else ";----------------------------------------------------",
+                    ";----------------------------------------------------",
+                    f"cutoff-scheme       = {self.cutoff_scheme}",
+                    f"ns-type             = {self.ns_type:<6} ; search neighboring grid cells",
+                    f"nstlist             = {self.nstlist:<6} ; {self.nstlist * self.dt * 1000:.0f} fs",
+                    f"rlist               = {self.rlist:<6} ; short-range neighborlist cutoff (in nm)",
+                    f"pbc                 = {self.pbc:<6} ; 3D PBC",
+                    "",
+                ]
+            )
+
+        # Bonds (skip for EM)
+        if self.mdp_type != "em":
+            bonds_header = (
+                "; BONDS"
+                if self.mdp_type == "nvt"
+                else ";----------------------------------------------------"
+            )
+            constraints_comment = (
+                " ; all bonds are constrained (HMR)"
+                if self.constraints == "all-bonds"
+                else ""
+            )
+
+            bonds_section = [
+                bonds_header,
+                ";----------------------------------------------------",
+                f"constraint_algorithm   = {self.constraint_algorithm:<9} ; holonomic constraints",
+                f"constraints            = {self.constraints:<9}{constraints_comment}",
+            ]
+
+            if self.constraints != "none":
+                bonds_section.extend(
+                    [
+                        f"lincs_iter             = {self.lincs_iter:<9} ; accuracy of LINCS (1 is default)",
+                        f"lincs_order            = {self.lincs_order:<9} ; also related to accuracy (4 is default)",
+                        f"lincs-warnangle        = {self.lincs_warnangle:<9} ; maximum angle that a bond can rotate before LINCS will complain (30 is default)",
+                    ]
+                )
+
+            bonds_section.extend([f"continuation           = {self.continuation}", ""])
+            mdp_lines.extend(bonds_section)
+
+        # Electrostatics
+        if self.mdp_type == "em":
+            mdp_lines.extend(
+                [
+                    ";----------------------------------------------------",
+                    "; ELECTROSTATICS",
+                    ";----------------------------------------------------",
+                    f"coulombtype            = {self.coulombtype}",
+                    f"rcoulomb               = {self.rcoulomb}",
+                    f"pme-order              = {self.pme_order}",
+                    f"fourierspacing         = {self.fourierspacing}",
+                    f"ewald-rtol             = {self.ewald_rtol}",
+                    "",
+                ]
+            )
+        else:
+            elec_header = (
+                "; ELECTROSTATICS"
+                if self.mdp_type == "nvt"
+                else "; ELECTROSTATICS & EWALD"
+            )
+            mdp_lines.extend(
+                [
+                    elec_header,
+                    ";----------------------------------------------------",
+                    f"coulombtype      = {self.coulombtype:<6} ; Particle Mesh Ewald for long-range electrostatics",
+                    f"rcoulomb         = {self.rcoulomb:<6} ; short-range electrostatic cutoff (in nm)",
+                    f"ewald_geometry   = {self.ewald_geometry:<6} ; Ewald sum is performed in all three dimensions",
+                    f"pme-order        = {self.pme_order:<6} ; interpolation order for PME (default is 4)",
+                    f"fourierspacing   = {self.fourierspacing:<6} ; grid spacing for FFT",
+                    f"ewald-rtol       = {self.ewald_rtol:<6} ; relative strength of the Ewald-shifted direct potential at rcoulomb",
+                    "",
+                ]
+            )
+
+        # VDW
+        if self.mdp_type == "em":
+            vdw_header = [
+                ";----------------------------------------------------",
+                "; VDW",
+                ";----------------------------------------------------",
+            ]
+        else:
+            vdw_header = (
+                [
+                    "; VAN DER WAALS",
+                    ";----------------------------------------------------",
+                ]
+                if self.mdp_type == "nvt"
+                else [
+                    ";----------------------------------------------------",
+                    "; VDW",
+                    ";----------------------------------------------------",
+                ]
+            )
+
+        mdp_lines.extend(
+            [
+                *vdw_header,
+                f"vdwtype                 = {self.vdwtype}",
+                f"vdw-modifier            = {self.vdw_modifier}",
+                f"verlet-buffer-tolerance = {self.verlet_buffer_tolerance}",
+                f"rvdw                    = {self.rvdw}          ; short-range van der Waals cutoff (in nm)",
+                f"DispCorr                = {self.DispCorr}     ; apply long range dispersion corrections for Energy and Pressure",
+                "",
+            ]
+        )
+
+        # Bonds (for EM only)
+        if self.mdp_type == "em":
+            mdp_lines.extend(
+                [
+                    ";----------------------------------------------------",
+                    "; BONDS",
+                    ";----------------------------------------------------",
+                    f"constraints            = {self.constraints}",
+                    "",
+                ]
+            )
+
+        # Temperature & Pressure Coupling
+        if self.mdp_type == "em":
+            mdp_lines.extend(
+                [
+                    ";----------------------------------------------------",
+                    "; TEMPERATURE & PRESSURE COUPL",
+                    ";----------------------------------------------------",
+                    f"tcoupl              = {self.tcoupl}",
+                    f"pcoupl              = {self.pcoupl}",
+                    f"gen-vel             = {self.gen_vel}",
+                    "",
+                ]
+            )
+        elif self.mdp_type == "nvt":
+            mdp_lines.extend(
+                [
+                    "; TEMPERATURE COUPLING",
+                    ";----------------------------------------------------",
+                    f"tc-grps    =  {self.tc_grps}",
+                    f"tau-t      =  {self.tau_t}",
+                    f"ref-t      =  {self.ref_t}",
+                    "",
+                    "; PRESSURE COUPLING",
+                    ";----------------------------------------------------",
+                    f"pcoupl           = {self.pcoupl}",
+                    "",
+                ]
+            )
+        else:  # npt, npt-norest, prod
+            mdp_lines.extend(
+                [
+                    ";----------------------------------------------------",
+                    "; TEMPERATURE & PRESSURE COUPL",
+                    ";----------------------------------------------------",
+                    f"tc-grps          = {self.tc_grps}",
+                    f"tau-t            = {self.tau_t}",
+                    f"ref-t            = {self.ref_t}",
+                    f"pcoupl           = {self.pcoupl}",
+                    f"pcoupltype       = {self.pcoupltype}            ; uniform scaling of box vectors",
+                    f"tau-p            = {self.tau_p}                  ; time constant (ps)",
+                    f"ref-p            = {self.ref_p}              ; reference pressure (bar)",
+                    f"compressibility  = {self.compressibility}              ; isothermal compressibility of water (bar^-1)",
+                ]
+            )
+            if self.refcoord_scaling:
+                mdp_lines.append(f"refcoord-scaling = {self.refcoord_scaling}")
+            mdp_lines.append("")
+
+        # Velocity Generation (only for non-EM stages)
+        if self.mdp_type != "em":
+            mdp_lines.extend(
+                [
+                    "; VELOCITY GENERATION",
+                    ";----------------------------------------------------",
+                    f"gen_vel      = {self.gen_vel}       ; Velocity generation is {'on' if self.gen_vel == 'yes' else 'off'}",
+                    f"gen-seed     = {self.gen_seed}       ; Use random seed",
+                    f"gen-temp     = {self.gen_temp}",
+                    "",
+                ]
+            )
+
+        # Free Energy
+        if self.free_energy == "yes":
+            mdp_lines.extend(
+                [
+                    "; FREE ENERGY",
+                    ";----------------------------------------------------",
+                    f"free-energy              = {self.free_energy}",
+                    f"couple-moltype           = {self.couple_moltype}",
+                    f"couple-lambda0           = {self.couple_lambda0}",
+                    f"couple-lambda1           = {self.couple_lambda1}",
+                    f"sc-alpha                 = {self.sc_alpha}",
+                    f"sc-power                 = {self.sc_power}",
+                    f"sc-sigma                 = {self.sc_sigma}",
+                    f"init-lambda-state        = {'<state>' if self.init_lambda_state is None else self.init_lambda_state}",
+                ]
+            )
+
+            if self.bonded_lambdas:
+                mdp_lines.append(
+                    f"bonded-lambdas           = {' '.join(str(x) for x in self.bonded_lambdas)}"
+                )
+
+            if self.coul_lambdas:
+                mdp_lines.append(
+                    f"coul-lambdas             = {' '.join(str(x) for x in self.coul_lambdas)}"
+                )
+
+            if self.vdw_lambdas:
+                mdp_lines.append(
+                    f"vdw-lambdas              = {' '.join(str(x) for x in self.vdw_lambdas)}"
+                )
+
+            mdp_lines.extend(
+                [
+                    f"nstdhdl                  = {self.nstdhdl}",
+                    f"dhdl-print-energy        = {self.dhdl_print_energy}",
+                    f"calc-lambda-neighbors    = {self.calc_lambda_neighbors}",
+                    f"separate-dhdl-file       = {self.separate_dhdl_file}",
+                    f"couple-intramol          = {self.couple_intramol}",
+                ]
+            )
+
+        # Extra options
+        if self.extra_options:
+            mdp_lines.append("")
+            for key, value in self.extra_options.items():
+                mdp_lines.append(f"{key} = {value}")
+
+        # Write file
+        config_path = _os.path.join(run_dir, self.get_file_name())
+        with open(config_path, "w") as f:
+            f.write("\n".join(mdp_lines) + "\n")
+
+    def write_all_stage_configs(
+        self,
+        run_dir: str,
+        lambda_val: float,
+        runtime: float,
+    ) -> None:
+        """
+        Generate all GROMACS stage MDP files (em, nvt, npt, npt-norest, prod).
+        Creates subdirectories for each stage and writes stage-specific MDP files.
+
+        Parameters
+        ----------
+        run_dir : str
+            Base directory (e.g., output/lambda_X.XXX/run_YY/)
+        lambda_val : float
+            Lambda value for this simulation
+        runtime : float
+            Runtime for production stage (ns)
+        """
+        stages = ["em", "nvt", "npt", "npt-norest", "prod"]
+
+        for stage in stages:
+            stage_dir = _os.path.join(run_dir, stage)
+            _os.makedirs(stage_dir, exist_ok=True)
+
+            original_mdp_type = self.mdp_type
+            original_define = self.define
+
+            self.mdp_type = stage
+
+            # Set define based on stage
+            if stage == "em":
+                self.define = "-DFLEXIBLE"
+            else:
+                self.define = None
+
+            self.write_config(
+                run_dir=stage_dir,
+                lambda_val=lambda_val,
+                runtime=runtime if stage == "prod" else 0.1,
+            )
+
+            self.mdp_type = original_mdp_type
+            self.define = original_define
+
+    def get_run_cmd(self, lam: float) -> str:
+        stages = ["em", "nvt", "npt", "npt-norest", "prod"]
+        commands = []
+
+        for i, stage in enumerate(stages):
+            # prepare input coordinates
+            if i == 0:
+                input_gro = "../gromacs.gro"
+            else:
+                prev_stage = stages[i - 1]
+                input_gro = f"../{prev_stage}/{prev_stage}.gro"
+
+            # grompp + mdrun
+            cmd = (
+                f"cd {stage} && "
+                f"gmx grompp -f gromacs.mdp -c {input_gro} -p ../gromacs.top -o {stage}.tpr && "
+                f"gmx mdrun -s {stage}.tpr -deffnm {stage} -v && "
+                f"cd .."
+            )
+            commands.append(cmd)
+
+        return " && ".join(commands)

@@ -492,7 +492,7 @@ class GromacsConfig(_EngineConfig):
     nstlog: int = _Field(500, description="Update log file")
     nstenergy: int = _Field(500, description="Save energies")
     nstcalcenergy: int = _Field(50, description="Calculate energies")
-
+    
     ### Bonds ###
     constraint_algorithm: _Literal["lincs", "shake"] = _Field(
         "lincs", description="Constraint algorithm"
@@ -504,7 +504,7 @@ class GromacsConfig(_EngineConfig):
     lincs_order: int = _Field(6, description="LINCS order")
     lincs_warnangle: int = _Field(30, description="LINCS warning angle")
     continuation: _Literal["yes", "no"] = _Field("yes", description="Continuation")
-
+    
     ### Neighbor Searching ###
     cutoff_scheme: _Literal["Verlet", "group"] = _Field(
         "Verlet", description="Cutoff scheme"
@@ -512,7 +512,7 @@ class GromacsConfig(_EngineConfig):
     ns_type: _Literal["grid", "simple"] = _Field("grid", description="Neighbor search")
     nstlist: int = _Field(20, description="Update neighbor list")
     rlist: float = _Field(1.2, description="Neighbor list cutoff (nm)")
-
+    
     ### Electrostatics ###
     coulombtype: _Literal["PME", "Cut-off"] = _Field("PME", description="Coulomb type")
     rcoulomb: float = _Field(1.0, description="Coulomb cutoff (nm)")
@@ -520,7 +520,7 @@ class GromacsConfig(_EngineConfig):
     pme_order: int = _Field(4, description="PME order")
     fourierspacing: float = _Field(0.10, description="PME grid spacing (nm)")
     ewald_rtol: float = _Field(1e-6, description="Ewald tolerance")
-
+    
     ### VDW ###
     vdwtype: _Literal["Cut-off", "PME"] = _Field("Cut-off", description="VdW type")
     vdw_modifier: _Literal["Potential-shift-Verlet", "None"] = _Field(
@@ -533,13 +533,13 @@ class GromacsConfig(_EngineConfig):
     DispCorr: _Literal["EnerPres", "Ener", "no"] = _Field(
         "EnerPres", description="Long range dispersion corrections"
     )
-
+    
     ### Temperature Coupling ###
     tcoupl: _Literal["no", "yes"] = _Field("no", description="Temperature coupling")
     tc_grps: str = _Field("System", description="Temperature coupling groups")
     tau_t: float = _Field(2.0, description="Time constant for T-coupling (ps)")
     ref_t: float = _Field(298.15, description="Reference temperature (K)")
-
+    
     ### Pressure Coupling ###
     pcoupl: _Literal["no", "Berendsen", "C-rescale", "Parrinello-Rahman"] = _Field(
         "Parrinello-Rahman", description="Pressure coupling"
@@ -553,7 +553,7 @@ class GromacsConfig(_EngineConfig):
     refcoord_scaling: _Optional[_Literal["all", "com", "no"]] = _Field(
         None, description="Reference coordinate scaling"
     )
-
+    
     ### Velocity Generation ###
     gen_vel: _Literal["yes", "no"] = _Field("no", description="Generate velocities")
     gen_seed: int = _Field(-1, description="Random seed")
@@ -572,7 +572,7 @@ class GromacsConfig(_EngineConfig):
         None,
         description="Boresch restraints dictionary content (interface compatibility, handled in topology)",
     )
-
+    
     ### Free Energy ###
     perturbed_residue_number: int = _Field(
         1,
@@ -631,7 +631,7 @@ class GromacsConfig(_EngineConfig):
     couple_intramol: _Literal["yes", "no"] = _Field(
         "yes", description="Couple intramolecular"
     )
-
+    
     ### Extra options ###
     extra_options: _Dict[str, str] = _Field(
         default_factory=dict, description="Extra options"
@@ -641,10 +641,15 @@ class GromacsConfig(_EngineConfig):
     def get_file_name() -> str:
         return "gromacs.mdp"
 
+    @property
+    def timestep(self) -> float:
+        """Return timestep in femtoseconds for compatibility with SomdConfig."""
+        return self.dt * 1000.0  # ps to fs
+
     def setup_lambda_arrays(self, stage_type) -> None:
         """
         Set up GROMACS-specific bonded/coul/vdw lambda arrays.
-
+        
         Parameters
         ----------
         stage_type : StageType
@@ -660,15 +665,15 @@ class GromacsConfig(_EngineConfig):
 
         if stage == "restrain":
             self.bonded_lambdas = self.lambda_values
-            self.coul_lambdas = None
-            self.vdw_lambdas = None
+            self.coul_lambdas = [0.0] * len(self.lambda_values)
+            self.vdw_lambdas = [0.0] * len(self.lambda_values)
         elif stage == "discharge":
             self.bonded_lambdas = [1.0] * len(self.lambda_values)
             self.coul_lambdas = self.lambda_values
-            self.vdw_lambdas = None
+            self.vdw_lambdas = [0.0] * len(self.lambda_values)
         elif stage == "vanish":
             self.bonded_lambdas = [1.0] * len(self.lambda_values)
-            self.coul_lambdas = None
+            self.coul_lambdas = [1.0] * len(self.lambda_values)
             self.vdw_lambdas = self.lambda_values
         else:
             raise ValueError(f"Unknown stage type: {stage}")
@@ -697,33 +702,33 @@ class GromacsConfig(_EngineConfig):
             self.tcoupl = "no"
             self.pcoupl = "no"
             self.gen_vel = "no"
-            self.nsteps = 50000
+            self.nsteps = 10000
             self.emtol = 10
             self.emstep = 0.01
             self.nstcomm = 100
             self.nstxout = 250
             self.nstlist = 1
-
+            
         elif self.mdp_type == "nvt":
             self.nsteps = 5000  # 10 ps
             self.continuation = "no"
             self.gen_vel = "yes"
             self.pcoupl = "no"
             self.nstxout = 25000
-
+            
         elif self.mdp_type == "npt":
             self.nsteps = 50000  # 100 ps
             self.pcoupl = "C-rescale"  # GROMACS 2025
             self.tau_p = 1.0
             self.refcoord_scaling = "all"
             self.nstxout = 25000
-
+            
         elif self.mdp_type == "npt-norest":
             self.nsteps = 250000  # 500 ps
             self.nstxout = 25000
-
+            
         else:  # prod
-            self.nsteps = 10000000  # 20 ns (will be overridden by runtime)
+            self.nsteps = 2500000  # 5 ns (will be overridden by runtime)
             self.nstxout = 0
 
     def write_config(
@@ -740,22 +745,41 @@ class GromacsConfig(_EngineConfig):
         """
         # Configure based on type
         self._configure_for_mdp_type()
-
+        
         # Override nsteps for prod based on runtime
         if self.mdp_type == "prod":
             runtime_ps = runtime * 1000
             self.nsteps = int(runtime_ps / self.dt)
 
         # Find lambda state index from the active lambda array
-        if self.bonded_lambdas and not self.coul_lambdas and not self.vdw_lambdas:
-            lambda_array = self.bonded_lambdas
-        elif self.coul_lambdas:
-            lambda_array = self.coul_lambdas
-        elif self.vdw_lambdas:
+        # Priority: find array containing lambda_val, otherwise use varying array
+        lambda_array = None
+        
+        # First, try to find array containing lambda_val
+        if self.vdw_lambdas and lambda_val in self.vdw_lambdas:
             lambda_array = self.vdw_lambdas
-        else:
-            raise ValueError("No lambda arrays set.")
-
+        elif self.coul_lambdas and lambda_val in self.coul_lambdas:
+            lambda_array = self.coul_lambdas
+        elif self.bonded_lambdas and lambda_val in self.bonded_lambdas:
+            lambda_array = self.bonded_lambdas
+        
+        # If not found, use varying array (not all values are the same)
+        if lambda_array is None:
+            if self.vdw_lambdas and len(set(self.vdw_lambdas)) > 1:
+                lambda_array = self.vdw_lambdas
+            elif self.coul_lambdas and len(set(self.coul_lambdas)) > 1:
+                lambda_array = self.coul_lambdas
+            elif self.bonded_lambdas and len(set(self.bonded_lambdas)) > 1:
+                lambda_array = self.bonded_lambdas
+        
+        if lambda_array is None:
+            raise ValueError(
+                f"Lambda {lambda_val} not found in any lambda array. "
+                f"bonded: {self.bonded_lambdas}, "
+                f"coul: {self.coul_lambdas}, "
+                f"vdw: {self.vdw_lambdas}"
+            )
+        
         try:
             self.init_lambda_state = lambda_array.index(lambda_val)
         except ValueError:
@@ -768,47 +792,47 @@ class GromacsConfig(_EngineConfig):
             ";====================================================",
             "",
         ]
-
+        
         # Run Control
         if self.mdp_type == "em":
             mdp_lines.extend(
                 [
-                    ";----------------------------------------------------",
-                    "; RUN CONTROL & MINIMIZATION",
-                    ";----------------------------------------------------",
+                ";----------------------------------------------------",
+                "; RUN CONTROL & MINIMIZATION",
+                ";----------------------------------------------------",
                 ]
             )
             if self.define:
                 mdp_lines.append(f"define                 = {self.define}")
             mdp_lines.extend(
                 [
-                    f"integrator             = {self.integrator}",
-                    f"nsteps                 = {self.nsteps}",
-                    f"emtol                  = {self.emtol}",
-                    f"emstep                 = {self.emstep}",
-                    f"nstcomm                = {self.nstcomm}",
-                    f"pbc                    = {self.pbc}",
+                f"integrator             = {self.integrator}",
+                f"nsteps                 = {self.nsteps}",
+                f"emtol                  = {self.emtol}",
+                f"emstep                 = {self.emstep}",
+                f"nstcomm                = {self.nstcomm}",
+                f"pbc                    = {self.pbc}",
                 ]
             )
         else:
             mdp_lines.extend(
                 [
-                    "; RUN CONTROL",
-                    ";----------------------------------------------------",
+                "; RUN CONTROL",
+                ";----------------------------------------------------",
                 ]
             )
             if self.define:
                 mdp_lines.append(f"define       = {self.define}")
             mdp_lines.extend(
                 [
-                    f"integrator   = {self.integrator:<13} ; langevin integrator",
-                    f"nsteps       = {self.nsteps:<13} ; {self.dt} * {self.nsteps} fs = {self.nsteps * self.dt * 0.001:.0f} ps",
-                    f"dt           = {self.dt:<13} ; {self.dt * 1000:.0f} fs",
-                    f"comm-mode    = {self.comm_mode:<13} ; remove center of mass translation",
-                    f"nstcomm      = {self.nstcomm:<13} ; frequency for center of mass motion removal",
+                f"integrator   = {self.integrator:<13} ; langevin integrator",
+                f"nsteps       = {self.nsteps:<13} ; {self.dt} * {self.nsteps} fs = {self.nsteps * self.dt * 0.001:.0f} ps",
+                f"dt           = {self.dt:<13} ; {self.dt * 1000:.0f} fs",
+                f"comm-mode    = {self.comm_mode:<13} ; remove center of mass translation",
+                f"nstcomm      = {self.nstcomm:<13} ; frequency for center of mass motion removal",
                 ]
             )
-
+        
         # Output Control
         mdp_lines.extend(
             [
@@ -825,30 +849,30 @@ class GromacsConfig(_EngineConfig):
                     if self.nstxout > 0
                     else "don't save coordinates to .trr"
                 ),
-                f"nstvout                = {self.nstvout:<10} ; don't save velocities to .trr",
-                f"nstfout                = {self.nstfout:<10} ; don't save forces to .trr",
-                "",
-                f"nstxout-compressed     = {self.nstxout_compressed:<10} ; xtc compressed trajectory output every {self.nstxout_compressed} steps",
-                f"compressed-x-precision = {self.compressed_x_precision}",
-                f"nstlog                 = {self.nstlog:<10} ; update log file every {self.nstlog} steps",
-                f"nstenergy              = {self.nstenergy:<10} ; save energies every {self.nstenergy} steps",
-                f"nstcalcenergy          = {self.nstcalcenergy}",
-                "",
+            f"nstvout                = {self.nstvout:<10} ; don't save velocities to .trr",
+            f"nstfout                = {self.nstfout:<10} ; don't save forces to .trr",
+            "",
+            f"nstxout-compressed     = {self.nstxout_compressed:<10} ; xtc compressed trajectory output every {self.nstxout_compressed} steps",
+            f"compressed-x-precision = {self.compressed_x_precision}",
+            f"nstlog                 = {self.nstlog:<10} ; update log file every {self.nstlog} steps",
+            f"nstenergy              = {self.nstenergy:<10} ; save energies every {self.nstenergy} steps",
+            f"nstcalcenergy          = {self.nstcalcenergy}",
+            "",
             ]
         )
-
+        
         # Neighbor Searching
         if self.mdp_type == "em":
             mdp_lines.extend(
                 [
-                    ";----------------------------------------------------",
-                    "; NEIGHBOR SEARCHING",
-                    ";----------------------------------------------------",
-                    f"cutoff-scheme          = {self.cutoff_scheme}",
-                    f"ns-type                = {self.ns_type}",
-                    f"nstlist                = {self.nstlist}",
-                    f"rlist                  = {self.rlist}",
-                    "",
+                ";----------------------------------------------------",
+                "; NEIGHBOR SEARCHING",
+                ";----------------------------------------------------",
+                f"cutoff-scheme          = {self.cutoff_scheme}",
+                f"ns-type                = {self.ns_type}",
+                f"nstlist                = {self.nstlist}",
+                f"rlist                  = {self.rlist}",
+                "",
                 ]
             )
         else:
@@ -857,16 +881,16 @@ class GromacsConfig(_EngineConfig):
                     "; NEIGHBOR SEARCHING"
                     if self.mdp_type == "nvt"
                     else ";----------------------------------------------------",
-                    ";----------------------------------------------------",
-                    f"cutoff-scheme       = {self.cutoff_scheme}",
-                    f"ns-type             = {self.ns_type:<6} ; search neighboring grid cells",
-                    f"nstlist             = {self.nstlist:<6} ; {self.nstlist * self.dt * 1000:.0f} fs",
-                    f"rlist               = {self.rlist:<6} ; short-range neighborlist cutoff (in nm)",
-                    f"pbc                 = {self.pbc:<6} ; 3D PBC",
-                    "",
+                ";----------------------------------------------------",
+                f"cutoff-scheme       = {self.cutoff_scheme}",
+                f"ns-type             = {self.ns_type:<6} ; search neighboring grid cells",
+                f"nstlist             = {self.nstlist:<6} ; {self.nstlist * self.dt * 1000:.0f} fs",
+                f"rlist               = {self.rlist:<6} ; short-range neighborlist cutoff (in nm)",
+                f"pbc                 = {self.pbc:<6} ; 3D PBC",
+                "",
                 ]
             )
-
+        
         # Bonds (skip for EM)
         if self.mdp_type != "em":
             bonds_header = (
@@ -898,20 +922,20 @@ class GromacsConfig(_EngineConfig):
 
             bonds_section.extend([f"continuation           = {self.continuation}", ""])
             mdp_lines.extend(bonds_section)
-
+        
         # Electrostatics
         if self.mdp_type == "em":
             mdp_lines.extend(
                 [
-                    ";----------------------------------------------------",
-                    "; ELECTROSTATICS",
-                    ";----------------------------------------------------",
-                    f"coulombtype            = {self.coulombtype}",
-                    f"rcoulomb               = {self.rcoulomb}",
-                    f"pme-order              = {self.pme_order}",
-                    f"fourierspacing         = {self.fourierspacing}",
-                    f"ewald-rtol             = {self.ewald_rtol}",
-                    "",
+                ";----------------------------------------------------",
+                "; ELECTROSTATICS",
+                ";----------------------------------------------------",
+                f"coulombtype            = {self.coulombtype}",
+                f"rcoulomb               = {self.rcoulomb}",
+                f"pme-order              = {self.pme_order}",
+                f"fourierspacing         = {self.fourierspacing}",
+                f"ewald-rtol             = {self.ewald_rtol}",
+                "",
                 ]
             )
         else:
@@ -923,17 +947,17 @@ class GromacsConfig(_EngineConfig):
             mdp_lines.extend(
                 [
                     elec_header,
-                    ";----------------------------------------------------",
-                    f"coulombtype      = {self.coulombtype:<6} ; Particle Mesh Ewald for long-range electrostatics",
-                    f"rcoulomb         = {self.rcoulomb:<6} ; short-range electrostatic cutoff (in nm)",
-                    f"ewald_geometry   = {self.ewald_geometry:<6} ; Ewald sum is performed in all three dimensions",
-                    f"pme-order        = {self.pme_order:<6} ; interpolation order for PME (default is 4)",
-                    f"fourierspacing   = {self.fourierspacing:<6} ; grid spacing for FFT",
-                    f"ewald-rtol       = {self.ewald_rtol:<6} ; relative strength of the Ewald-shifted direct potential at rcoulomb",
-                    "",
+                ";----------------------------------------------------",
+                f"coulombtype      = {self.coulombtype:<6} ; Particle Mesh Ewald for long-range electrostatics",
+                f"rcoulomb         = {self.rcoulomb:<6} ; short-range electrostatic cutoff (in nm)",
+                f"ewald_geometry   = {self.ewald_geometry:<6} ; Ewald sum is performed in all three dimensions",
+                f"pme-order        = {self.pme_order:<6} ; interpolation order for PME (default is 4)",
+                f"fourierspacing   = {self.fourierspacing:<6} ; grid spacing for FFT",
+                f"ewald-rtol       = {self.ewald_rtol:<6} ; relative strength of the Ewald-shifted direct potential at rcoulomb",
+                "",
                 ]
             )
-
+        
         # VDW
         if self.mdp_type == "em":
             vdw_header = [
@@ -978,68 +1002,68 @@ class GromacsConfig(_EngineConfig):
                     "",
                 ]
             )
-
+        
         # Temperature & Pressure Coupling
         if self.mdp_type == "em":
             mdp_lines.extend(
                 [
-                    ";----------------------------------------------------",
-                    "; TEMPERATURE & PRESSURE COUPL",
-                    ";----------------------------------------------------",
-                    f"tcoupl              = {self.tcoupl}",
-                    f"pcoupl              = {self.pcoupl}",
-                    f"gen-vel             = {self.gen_vel}",
-                    "",
+                ";----------------------------------------------------",
+                "; TEMPERATURE & PRESSURE COUPL",
+                ";----------------------------------------------------",
+                f"tcoupl              = {self.tcoupl}",
+                f"pcoupl              = {self.pcoupl}",
+                f"gen-vel             = {self.gen_vel}",
+                "",
                 ]
             )
         elif self.mdp_type == "nvt":
             mdp_lines.extend(
                 [
-                    "; TEMPERATURE COUPLING",
-                    ";----------------------------------------------------",
-                    f"tc-grps    =  {self.tc_grps}",
-                    f"tau-t      =  {self.tau_t}",
-                    f"ref-t      =  {self.ref_t}",
-                    "",
-                    "; PRESSURE COUPLING",
-                    ";----------------------------------------------------",
-                    f"pcoupl           = {self.pcoupl}",
-                    "",
+                "; TEMPERATURE COUPLING",
+                ";----------------------------------------------------",
+                f"tc-grps    =  {self.tc_grps}",
+                f"tau-t      =  {self.tau_t}",
+                f"ref-t      =  {self.ref_t}",
+                "",
+                "; PRESSURE COUPLING",
+                ";----------------------------------------------------",
+                f"pcoupl           = {self.pcoupl}",
+                "",
                 ]
             )
         else:  # npt, npt-norest, prod
             mdp_lines.extend(
                 [
-                    ";----------------------------------------------------",
-                    "; TEMPERATURE & PRESSURE COUPL",
-                    ";----------------------------------------------------",
-                    f"tc-grps          = {self.tc_grps}",
-                    f"tau-t            = {self.tau_t}",
-                    f"ref-t            = {self.ref_t}",
-                    f"pcoupl           = {self.pcoupl}",
-                    f"pcoupltype       = {self.pcoupltype}            ; uniform scaling of box vectors",
-                    f"tau-p            = {self.tau_p}                  ; time constant (ps)",
-                    f"ref-p            = {self.ref_p}              ; reference pressure (bar)",
-                    f"compressibility  = {self.compressibility}              ; isothermal compressibility of water (bar^-1)",
+                ";----------------------------------------------------",
+                "; TEMPERATURE & PRESSURE COUPL",
+                ";----------------------------------------------------",
+                f"tc-grps          = {self.tc_grps}",
+                f"tau-t            = {self.tau_t}",
+                f"ref-t            = {self.ref_t}",
+                f"pcoupl           = {self.pcoupl}",
+                f"pcoupltype       = {self.pcoupltype}            ; uniform scaling of box vectors",
+                f"tau-p            = {self.tau_p}                  ; time constant (ps)",
+                f"ref-p            = {self.ref_p}              ; reference pressure (bar)",
+                f"compressibility  = {self.compressibility}              ; isothermal compressibility of water (bar^-1)",
                 ]
             )
             if self.refcoord_scaling:
                 mdp_lines.append(f"refcoord-scaling = {self.refcoord_scaling}")
             mdp_lines.append("")
-
+        
         # Velocity Generation (only for non-EM stages)
         if self.mdp_type != "em":
             mdp_lines.extend(
                 [
                     "; VELOCITY GENERATION",
-                    ";----------------------------------------------------",
-                    f"gen_vel      = {self.gen_vel}       ; Velocity generation is {'on' if self.gen_vel == 'yes' else 'off'}",
+            ";----------------------------------------------------",
+            f"gen_vel      = {self.gen_vel}       ; Velocity generation is {'on' if self.gen_vel == 'yes' else 'off'}",
                     f"gen-seed     = {self.gen_seed}       ; Use random seed",
                     f"gen-temp     = {self.gen_temp}",
                     "",
                 ]
             )
-
+        
         # Free Energy
         if self.free_energy == "yes":
             mdp_lines.extend(
@@ -1056,38 +1080,38 @@ class GromacsConfig(_EngineConfig):
                     f"init-lambda-state        = {'<state>' if self.init_lambda_state is None else self.init_lambda_state}",
                 ]
             )
-
+            
             if self.bonded_lambdas:
                 mdp_lines.append(
                     f"bonded-lambdas           = {' '.join(str(x) for x in self.bonded_lambdas)}"
                 )
-
+            
             if self.coul_lambdas:
                 mdp_lines.append(
                     f"coul-lambdas             = {' '.join(str(x) for x in self.coul_lambdas)}"
                 )
-
+            
             if self.vdw_lambdas:
                 mdp_lines.append(
                     f"vdw-lambdas              = {' '.join(str(x) for x in self.vdw_lambdas)}"
                 )
-
+            
             mdp_lines.extend(
                 [
-                    f"nstdhdl                  = {self.nstdhdl}",
-                    f"dhdl-print-energy        = {self.dhdl_print_energy}",
-                    f"calc-lambda-neighbors    = {self.calc_lambda_neighbors}",
-                    f"separate-dhdl-file       = {self.separate_dhdl_file}",
-                    f"couple-intramol          = {self.couple_intramol}",
+                f"nstdhdl                  = {self.nstdhdl}",
+                f"dhdl-print-energy        = {self.dhdl_print_energy}",
+                f"calc-lambda-neighbors    = {self.calc_lambda_neighbors}",
+                f"separate-dhdl-file       = {self.separate_dhdl_file}",
+                f"couple-intramol          = {self.couple_intramol}",
                 ]
             )
-
+        
         # Extra options
         if self.extra_options:
             mdp_lines.append("")
             for key, value in self.extra_options.items():
                 mdp_lines.append(f"{key} = {value}")
-
+        
         # Write file
         config_path = _os.path.join(run_dir, self.get_file_name())
         with open(config_path, "w") as f:

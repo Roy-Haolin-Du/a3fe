@@ -822,36 +822,37 @@ class Stage(_SimulationRunner):
                     tmp_files=tmp_files,
                 )
 
-                mean_free_energy = _np.mean(free_energies)
-                # Gaussian 95 % C.I.
-                conf_int = (
-                    _stats.t.interval(
-                        0.95,
-                        len(free_energies) - 1,
-                        mean_free_energy,
-                        scale=_stats.sem(free_energies),
-                    )[1]
-                    - mean_free_energy
-                )  # 95 % C.I.
+            mean_free_energy = _np.mean(free_energies)
+            # Gaussian 95 % C.I.
+            conf_int = (
+                _stats.t.interval(
+                    0.95,
+                    len(free_energies) - 1,
+                    mean_free_energy,
+                    scale=_stats.sem(free_energies),
+                )[1]
+                - mean_free_energy
+            )  # 95 % C.I.
 
-                # Write overall MBAR stats to file
-                with open(f"{self.output_dir}/overall_stats.dat", "a") as ofile:
-                    if get_frnrg:
+            # Write overall MBAR stats to file
+            with open(f"{self.output_dir}/overall_stats.dat", "a") as ofile:
+                if get_frnrg:
+                    ofile.write(
+                        "###################################### Free Energies ########################################\n"
+                    )
+                    ofile.write(
+                        f"Mean free energy: {mean_free_energy: .3f} + /- {conf_int:.3f} kcal/mol\n"
+                    )
+                    for i in range(len(free_energies)):
                         ofile.write(
-                            "###################################### Free Energies ########################################\n"
+                            f"Free energy from run {i + 1}: {free_energies[i]: .3f} +/- {errors[i]:.3f} kcal/mol\n"
                         )
-                        ofile.write(
-                            f"Mean free energy: {mean_free_energy: .3f} + /- {conf_int:.3f} kcal/mol\n"
-                        )
-                        for i in range(len(free_energies)):
-                            ofile.write(
-                                f"Free energy from run {i + 1}: {free_energies[i]: .3f} +/- {errors[i]:.3f} kcal/mol\n"
-                            )
-                        ofile.write(
-                            "Errors are 95 % C.I.s based on the assumption of a Gaussian distribution of free energies\n"
-                        )
-                        ofile.write(f"Runs analysed: {run_nos}\n")
+                    ofile.write(
+                        "Errors are 95 % C.I.s based on the assumption of a Gaussian distribution of free energies\n"
+                    )
+                    ofile.write(f"Runs analysed: {run_nos}\n")
 
+            if get_frnrg:
                 # Plot overlap matrices and PMFs
                 _plot_overlap_mats(
                     output_dir=self.output_dir,

@@ -256,24 +256,13 @@ class GromacsSystemPreparationConfig(_BaseSystemPreparationConfig):
     lambda_values: _Dict[_LegType, _Dict[_StageType, _List[float]]] = _Field(
         default={
             _LegType.BOUND: {
-                _StageType.RESTRAIN: [0.0, 0.05, 0.15, 0.5, 0.75, 1.0],
-                _StageType.DISCHARGE: [0.0, 0.3, 0.6, 0.9, 1.0],
-                _StageType.VANISH: [
-                    0.0,
-                    0.05,
-                    0.2,
-                    0.25,
-                    0.4,
-                    0.5,
-                    0.65,
-                    0.8,
-                    0.9,
-                    1.0,
-                ],
+                _StageType.RESTRAIN: [0.0, 1.0],
+                _StageType.DISCHARGE: [0.0, 0.16, 0.33, 0.5, 0.67, 0.83, 1.0],
+                _StageType.VANISH: [ 0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0],
             },
             _LegType.FREE: {
-                _StageType.DISCHARGE: [0.0, 0.2, 0.4, 0.5, 0.7, 0.9, 1.0],
-                _StageType.VANISH: [0.0, 0.2, 0.35, 0.4, 0.55, 0.7, 0.85, 1.0],
+                _StageType.DISCHARGE: [0.0, 0.16, 0.33, 0.5, 0.67, 0.83, 1.0],
+                _StageType.VANISH: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0],
             },
         },
         description="Lambda values optimized for GROMACS.",

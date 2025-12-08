@@ -17,12 +17,12 @@ from ..analyse.detect_equil import check_equil_chodera as _check_equil_chodera
 from ..analyse.detect_equil import (
     dummy_check_equil_multiwindow as _dummy_check_equil_multiwindow,
 )
+from ..configuration import EngineType as _EngineType
+from ..configuration import SlurmConfig as _SlurmConfig
+from ..configuration import _EngineConfig
 from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._virtual_queue import VirtualQueue as _VirtualQueue
 from .simulation import Simulation as _Simulation
-from ..configuration import SlurmConfig as _SlurmConfig
-from ..configuration import _EngineConfig
-from ..configuration import EngineType as _EngineType
 
 
 class LamWindow(_SimulationRunner):
@@ -350,36 +350,53 @@ class LamWindow(_SimulationRunner):
             )
 
         # Get the index of the first equilibrated data point
-        # Minus 1 because first energy is only written after the first nrg_freq steps
-        equil_index = (
-            int(
-                self._equil_time
-                / (
-                    self.sims[0].engine_config.timestep
-                    * self.sims[0].engine_config.energy_frequency
-                )
-            )
-            - 1  # type: ignore
+        config = self.sims[0].engine_config
+
+        if self.sims[0].engine_type == _EngineType.GROMACS:
+            # GROMACS: dt in ps, nstdhdl is steps (dH/dlambda output frequency), convert to ns
+            # First energy is written at time 0, so no offset needed
+            time_per_energy = config.dt * config.nstdhdl / 1000
+            equil_index = int(self._equil_time / time_per_energy)
+        else:
+            # SOMD: timestep in fs, energy_frequency is steps, convert to ns
+            # First energy is only written after the first nrg_freq steps, so subtract 1
+            time_per_energy = config.timestep * config.energy_frequency / 1_000_000
+            equil_index = int(self._equil_time / time_per_energy) - 1
+
+        if equil_index < 0:
+            raise ValueError(
+                f"Equilibration time ({self._equil_time:.3f} ns) is too short. "
+                f"Must be at least {time_per_energy:.6f} ns (one energy output interval)."
         )
 
         # Write the equilibrated data for each simulation
         for sim in self.sims:
-            in_simfile = sim.output_dir + "/simfile.dat"
-            out_simfile = sim.output_dir + "/simfile_equilibrated.dat"
+            # Set file paths based on engine type
+            if sim.engine_type == _EngineType.GROMACS:
+                in_file = sim.output_dir + "/prod/prod.xvg"
+                out_file = sim.output_dir + "/prod/prod_equilibrated.xvg"
+                header_chars = ("#", "@")
+            else:
+                in_file = sim.output_dir + "/simfile.dat"
+                out_file = sim.output_dir + "/simfile_equilibrated.dat"
+                header_chars = ("#",)
 
-            with open(in_simfile, "r") as ifile:
+            if not _os.path.exists(in_file):
+                continue
+
+            with open(in_file, "r") as ifile:
                 lines = ifile.readlines()
 
             # Figure out how many lines come before the data
             non_data_lines = 0
             for line in lines:
-                if line.startswith("#"):
+                if line.startswith(header_chars):
                     non_data_lines += 1
                 else:
                     break
 
             # Overwrite the original file with one containing only the equilibrated data
-            with open(out_simfile, "w") as ofile:
+            with open(out_file, "w") as ofile:
                 # First, write the header
                 for line in lines[:non_data_lines]:
                     ofile.write(line)

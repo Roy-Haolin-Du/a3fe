@@ -185,18 +185,22 @@ class Simulation(_SimulationRunner):
                 self._logger.info(f"{old_job} failed - resubmitting")
                 # Move log files and checkpoint files so that the job does not restart
                 _subprocess.run(["mkdir", "-p", f"{self.output_dir}/failure"])
-                
+
                 if self.engine_type == _EngineType.GROMACS:
                     # Move GROMACS checkpoint files
-                    for cpt_file in _glob.glob(f"{self.output_dir}/**/*.cpt", recursive=True):
+                    for cpt_file in _glob.glob(
+                        f"{self.output_dir}/**/*.cpt", recursive=True
+                    ):
                         _subprocess.run(["mv", cpt_file, f"{self.output_dir}/failure"])
                 else:  # SOMD
                     # Move SOMD s3 files
                     for s3_file in _glob.glob(f"{self.output_dir}/*.s3"):
                         _subprocess.run(["mv", s3_file, f"{self.output_dir}/failure"])
-                
-                _subprocess.run(["mv", old_job.slurm_outfile, f"{self.output_dir}/failure"])
-                
+
+                _subprocess.run(
+                    ["mv", old_job.slurm_outfile, f"{self.output_dir}/failure"]
+                )
+
                 # Now resubmit
                 cmd_list = old_job.command_list
                 self.job = self.virtual_queue.submit(
@@ -354,9 +358,12 @@ class Simulation(_SimulationRunner):
                 return 0
             else:
                 # Read last non-comment line of xvg file
-                last_line = _subprocess.check_output(
-                    ["grep", "-v", "^[#@]", data_file]
-                ).decode("utf-8").strip().split("\n")[-1]
+                last_line = (
+                    _subprocess.check_output(["grep", "-v", "^[#@]", data_file])
+                    .decode("utf-8")
+                    .strip()
+                    .split("\n")[-1]
+                )
                 time_ps = float(last_line.split()[0])
                 return time_ps / 1000.0  # ps to ns
         else:  # SOMD
@@ -394,7 +401,7 @@ class Simulation(_SimulationRunner):
 
         # Otherwise, add up the simulation time in seconds
         tot_gpu_time = 0
-        
+
         if self.engine_type == _EngineType.GROMACS:
             # GROMACS: look for "Time:" in performance summary
             # Format: "       Time:     2496.669      156.055     1599.9"
@@ -450,12 +457,12 @@ class Simulation(_SimulationRunner):
     def _check_simulation_success(self, slurm_file: str) -> bool:
         """
         Check if simulation completed successfully based on engine type.
-    
+
         Parameters
         ----------
         slurm_file : str
             Path to SLURM output file
-        
+
         Returns
         -------
         success : bool
@@ -463,7 +470,7 @@ class Simulation(_SimulationRunner):
         """
         with open(slurm_file, "rt") as f:
             content = f.read()
-    
+
         if self.engine_type == _EngineType.SOMD:
             # SOMD success: "Simulation took" line in SLURM output
             return "Simulation took" in content
@@ -491,13 +498,23 @@ class Simulation(_SimulationRunner):
             patterns = ["*.xtc", "*.trr", "*.cpt", "*_equilibrated.xvg"]
             use_recursive = True
         else:  # SOMD
-            patterns = ["*.dcd", "*.s3", "*.s3.previous", "gradients.s3", 
-                       "simfile_equilibrated.dat", "latest.pdb"]
+            patterns = [
+                "*.dcd",
+                "*.s3",
+                "*.s3.previous",
+                "gradients.s3",
+                "simfile_equilibrated.dat",
+                "latest.pdb",
+            ]
             use_recursive = False
-        
+
         for directory in [self.base_dir, self.output_dir]:
             for pattern in patterns:
-                glob_func = _pathlib.Path(directory).rglob if use_recursive else _pathlib.Path(directory).glob
+                glob_func = (
+                    _pathlib.Path(directory).rglob
+                    if use_recursive
+                    else _pathlib.Path(directory).glob
+                )
                 for file in glob_func(pattern):
                     self._logger.info(f"Deleting {file}")
                     _subprocess.run(["rm", str(file)])
@@ -528,29 +545,31 @@ class Simulation(_SimulationRunner):
         """
         # GROMACS: read .xvg file
         if self.engine_type == _EngineType.GROMACS:
-            filename = "prod/prod_equilibrated.xvg" if equilibrated_only else "prod/prod.xvg"
+            filename = (
+                "prod/prod_equilibrated.xvg" if equilibrated_only else "prod/prod.xvg"
+            )
             times = []
             grads = []
-            
+
             with open(_os.path.join(self.output_dir, filename), "r") as f:
                 for line in f:
-                    if line.startswith(('#', '@')) or not line.strip():
+                    if line.startswith(("#", "@")) or not line.strip():
                         continue
                     vals = line.split()
                     time_ps = float(vals[0])
-                    
+
                     if endstate:
                         energy_start = float(vals[3])
                         energy_end = float(vals[-2])
                         grad_kj = energy_end - energy_start
                     else:
                         grad_kj = float(vals[1])
-                    
+
                     times.append(time_ps / 1000.0)
                     grads.append(grad_kj / 4.184)
-            
+
             return _np.array(times), _np.array(grads)
-        
+
         # SOMD: read simfile.dat
         if equilibrated_only:
             with open(

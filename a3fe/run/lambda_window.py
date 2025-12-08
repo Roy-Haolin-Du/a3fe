@@ -367,7 +367,7 @@ class LamWindow(_SimulationRunner):
             raise ValueError(
                 f"Equilibration time ({self._equil_time:.3f} ns) is too short. "
                 f"Must be at least {time_per_energy:.6f} ns (one energy output interval)."
-        )
+            )
 
         # Write the equilibrated data for each simulation
         for sim in self.sims:

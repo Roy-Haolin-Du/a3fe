@@ -18,16 +18,16 @@ RUN_SLURM_TESTS=1 pytest a3fe/tests/test_run_integration.py::TestSlurmIntegratio
 See README.md in this directory for more information on running these tests.
 """
 
-import os
-import pytest
-import subprocess
 import glob
-from tempfile import TemporaryDirectory
 import logging
+import os
+import subprocess
+from tempfile import TemporaryDirectory
+
+import pytest
 
 import a3fe as a3
-from a3fe.tests import SLURM_PRESENT, RUN_SLURM_TESTS
-
+from a3fe.tests import RUN_SLURM_TESTS, SLURM_PRESENT
 
 # Define the legs and stages for testing
 LEGS_WITH_STAGES = {

@@ -14,11 +14,11 @@ from typing import Optional as _Optional
 
 import BioSimSpace.Sandpit.Exscientia as _BSS
 
-from ..read._process_bss_systems import rename_lig as _rename_lig
-from ._utils import check_has_wat_and_box as _check_has_wat_and_box
+from ..configuration import EngineType as _EngineType
 from ..configuration import LegType as _LegType
 from ..configuration import PreparationStage as _PreparationStage
-from ..configuration import EngineType as _EngineType
+from ..read._process_bss_systems import rename_lig as _rename_lig
+from ._utils import check_has_wat_and_box as _check_has_wat_and_box
 
 
 def parameterise_input(

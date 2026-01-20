@@ -14,13 +14,13 @@ from typing import Tuple as _Tuple
 import numpy as _np
 from sire.units import k_boltz as _k_boltz
 
-from ._simulation_runner import SimulationRunner as _SimulationRunner
-from ._virtual_queue import Job as _Job
-from ._virtual_queue import VirtualQueue as _VirtualQueue
+from ..configuration import EngineType as _EngineType
 from ..configuration import JobStatus as _JobStatus
 from ..configuration import SlurmConfig as _SlurmConfig
 from ..configuration import _EngineConfig
-from ..configuration import EngineType as _EngineType
+from ._simulation_runner import SimulationRunner as _SimulationRunner
+from ._virtual_queue import Job as _Job
+from ._virtual_queue import VirtualQueue as _VirtualQueue
 
 
 class Simulation(_SimulationRunner):

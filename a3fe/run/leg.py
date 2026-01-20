@@ -22,20 +22,19 @@ import pandas as _pd
 from ..analyse.plot import plot_convergence as _plot_convergence
 from ..analyse.plot import plot_rmsds as _plot_rmsds
 from ..analyse.plot import plot_sq_sem_convergence as _plot_sq_sem_convergence
+from ..configuration import EngineType as _EngineType
+from ..configuration import LegType as _LegType
+from ..configuration import PreparationStage as _PreparationStage
+from ..configuration import SlurmConfig as _SlurmConfig
+from ..configuration import StageType as _StageType
+from ..configuration import _BaseSystemPreparationConfig, _EngineConfig
 from . import system_prep as _system_prep
 from ._restraint import A3feRestraint as _A3feRestraint
 from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._utils import get_single_mol as _get_single_mol
 from ._virtual_queue import Job as _Job
 from ._virtual_queue import VirtualQueue as _VirtualQueue
-from ..configuration import LegType as _LegType
-from ..configuration import PreparationStage as _PreparationStage
-from ..configuration import StageType as _StageType
-from ..configuration import EngineType as _EngineType
-from ..configuration import _EngineConfig
-from ..configuration import SlurmConfig as _SlurmConfig
 from .stage import Stage as _Stage
-from ..configuration import _BaseSystemPreparationConfig
 
 
 class Leg(_SimulationRunner):

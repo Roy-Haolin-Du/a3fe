@@ -17,12 +17,12 @@ from ..analyse.detect_equil import check_equil_chodera as _check_equil_chodera
 from ..analyse.detect_equil import (
     dummy_check_equil_multiwindow as _dummy_check_equil_multiwindow,
 )
+from ..configuration import EngineType as _EngineType
+from ..configuration import SlurmConfig as _SlurmConfig
+from ..configuration import _EngineConfig
 from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._virtual_queue import VirtualQueue as _VirtualQueue
 from .simulation import Simulation as _Simulation
-from ..configuration import SlurmConfig as _SlurmConfig
-from ..configuration import _EngineConfig
-from ..configuration import EngineType as _EngineType
 
 
 class LamWindow(_SimulationRunner):

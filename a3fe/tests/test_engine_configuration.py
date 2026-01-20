@@ -1,7 +1,8 @@
 """Unit and regression tests for the engine configuration class."""
 
-from tempfile import TemporaryDirectory
 import os
+from tempfile import TemporaryDirectory
+
 import pytest
 from pydantic import ValidationError
 

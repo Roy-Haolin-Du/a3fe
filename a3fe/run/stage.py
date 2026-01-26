@@ -9,7 +9,6 @@ import pathlib as _pathlib
 import threading as _threading
 from copy import deepcopy as _deepcopy
 from math import ceil as _ceil
-import matplotlib.pyplot as _plt
 from multiprocessing import get_context as _get_context
 from time import sleep as _sleep
 from typing import Any as _Any
@@ -20,6 +19,7 @@ from typing import Optional as _Optional
 from typing import Tuple as _Tuple
 from typing import Union as _Union
 
+import matplotlib.pyplot as _plt
 import numpy as _np
 import pandas as _pd
 import scipy.stats as _stats
@@ -49,13 +49,13 @@ from ..analyse.plot import plot_overlap_mats as _plot_overlap_mats
 from ..analyse.plot import plot_rmsds as _plot_rmsds
 from ..analyse.plot import plot_sq_sem_convergence as _plot_sq_sem_convergence
 from ..analyse.process_grads import GradientData as _GradientData
+from ..configuration import EngineType as _EngineType
+from ..configuration import SlurmConfig as _SlurmConfig
+from ..configuration import StageType as _StageType
+from ..configuration import _EngineConfig
 from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._virtual_queue import VirtualQueue as _VirtualQueue
-from ..configuration import StageType as _StageType
 from .lambda_window import LamWindow as _LamWindow
-from ..configuration import SlurmConfig as _SlurmConfig
-from ..configuration import _EngineConfig
-from ..configuration import EngineType as _EngineType
 
 
 class Stage(_SimulationRunner):

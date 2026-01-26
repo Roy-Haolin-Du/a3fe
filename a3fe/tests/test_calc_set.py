@@ -2,9 +2,8 @@
 
 import os
 
-import pytest
-
 import pandas as pd
+import pytest
 
 
 def test_calc_set_analysis(calc_set):

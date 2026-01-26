@@ -1,12 +1,13 @@
 """Enums required for Classes in the run package."""
 
 from enum import Enum as _Enum
+from typing import Any as _Any
 from typing import List as _List
+
 import yaml as _yaml
 
-from .engine_config import _EngineConfig, SomdConfig as _SomdConfig
-
-from typing import Any as _Any
+from .engine_config import SomdConfig as _SomdConfig
+from .engine_config import _EngineConfig
 
 __all__ = [
     "JobStatus",
@@ -142,10 +143,16 @@ class PreparationStage(_YamlSerialisableEnum):
     def prep_fn(self):
         """The function to use to prepare the input files for this stage."""
         from ..run.system_prep import (
-            parameterise_input as _parameterise_input,
-            solvate_input as _solvate_input,
-            minimise_input as _minimise_input,
             heat_and_preequil_input as _heat_and_preequil_input,
+        )
+        from ..run.system_prep import (
+            minimise_input as _minimise_input,
+        )
+        from ..run.system_prep import (
+            parameterise_input as _parameterise_input,
+        )
+        from ..run.system_prep import (
+            solvate_input as _solvate_input,
         )
 
         prep_fns = {

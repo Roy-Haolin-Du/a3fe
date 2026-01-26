@@ -13,6 +13,18 @@ import sys as _sys
 import warnings as _warnings
 
 from ._version import __version__
+from .configuration import (
+    EngineType,
+    JobStatus,
+    LegType,
+    PreparationStage,
+    SlurmConfig,
+    SomdConfig,
+    SomdSystemPreparationConfig,
+    StageType,
+    _EngineConfig,
+    enums,
+)
 from .run import (
     CalcSet,
     Calculation,
@@ -20,19 +32,6 @@ from .run import (
     Leg,
     Simulation,
     Stage,
-)
-
-from .configuration import (
-    SlurmConfig,
-    _EngineConfig,
-    SomdConfig,
-    EngineType,
-    JobStatus,
-    LegType,
-    PreparationStage,
-    StageType,
-    enums,
-    SomdSystemPreparationConfig,
 )
 
 # A3FE can open many files due to the use of multiprocessing and

@@ -6,18 +6,17 @@ __all__ = [
     "SomdSystemPreparationConfig",
 ]
 
-import yaml as _yaml
-
 from abc import ABC as _ABC
+from typing import Dict as _Dict
+from typing import List as _List
 
+import yaml as _yaml
 from pydantic import BaseModel as _BaseModel
-from pydantic import Field as _Field
 from pydantic import ConfigDict as _ConfigDict
+from pydantic import Field as _Field
 
-from .enums import StageType as _StageType
 from .enums import LegType as _LegType
-
-from typing import List as _List, Dict as _Dict
+from .enums import StageType as _StageType
 
 
 class _BaseSystemPreparationConfig(_ABC, _BaseModel):

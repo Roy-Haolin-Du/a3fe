@@ -2,6 +2,10 @@
 Change Log
 ===============
 
+0.4.1
+====================
+- Fixed the statistical inefficiency timestep units from femtoseconds to nanoseconds.
+
 0.4.0
 ====================
 

@@ -15,6 +15,7 @@ from typing import Tuple as _Tuple
 
 import numpy as _np
 
+from ..configuration import SlurmConfig as _SlurmConfig
 from ..read._process_somd_files import read_mbar_gradients as _read_mbar_gradients
 from ..read._process_somd_files import read_mbar_result as _read_mbar_result
 from ..read._process_somd_files import (
@@ -22,8 +23,6 @@ from ..read._process_somd_files import (
 )
 from ..run._virtual_queue import Job as _Job
 from ..run._virtual_queue import VirtualQueue as _VirtualQueue
-
-from ..configuration import SlurmConfig as _SlurmConfig
 
 
 def run_mbar(

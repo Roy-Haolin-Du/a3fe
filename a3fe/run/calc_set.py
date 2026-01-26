@@ -12,12 +12,10 @@ from typing import Optional as _Optional
 import numpy as _np
 from scipy import stats as _stats
 
-from ..configuration import SlurmConfig as _SlurmConfig
-from ..configuration import _EngineConfig
-from ..configuration import _BaseSystemPreparationConfig
-
 from ..analyse.analyse_set import compute_stats as _compute_stats
 from ..analyse.plot import plot_against_exp as _plt_against_exp
+from ..configuration import SlurmConfig as _SlurmConfig
+from ..configuration import _BaseSystemPreparationConfig, _EngineConfig
 from ..read._read_exp_dgs import read_exp_dgs as _read_exp_dgs
 from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._utils import SimulationRunnerIterator as _SimulationRunnerIterator

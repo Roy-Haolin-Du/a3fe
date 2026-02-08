@@ -17,6 +17,7 @@ dependencies:
   - scipy
   - ipython
   - pymbar<4
+  - alchemlyb=1.0.1
   - ambertools
   - biosimspace>2023.4
   - numpydoc
@@ -36,4 +37,3 @@ dependencies:
 
     # Development tools
   - pre-commit
-

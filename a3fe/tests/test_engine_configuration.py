@@ -106,6 +106,44 @@ def test_charge_cutoff_validation(engine_config, charge, cutoff, should_pass):
             engine_config(ligand_charge=charge, cutoff_type=cutoff, runtime=1)
 
 
+@pytest.mark.parametrize(
+    "runtime,nmoves,timestep,calculated_ncycles",
+    [
+        (5.0, 25000, 4.0, 50),
+        (10.0, 50000, 2.0, 100),
+    ],
+)
+def test_ncycles_calculation(
+    somd_engine_config, runtime, nmoves, timestep, calculated_ncycles
+):
+    """Test that ncycles is correctly calculated from runtime, nmoves and timestep."""
+    config = somd_engine_config(runtime=runtime, nmoves=nmoves, timestep=timestep)
+    assert config.ncycles == calculated_ncycles
+
+
+def test_ncycles_invalid_runtime(somd_engine_config):
+    """Test that ValueError is raised when runtime is not a multiple of timestep."""
+    config = somd_engine_config(runtime=5.0, nmoves=25000, timestep=3.0)
+    with pytest.raises(ValueError, match="Runtime must be a multiple of timestep"):
+        config.ncycles
+
+
+def test_ncycles_too_short(somd_engine_config):
+    """Test that ValueError is raised when runtime is too short."""
+    config = somd_engine_config(runtime=0.01, nmoves=25000, timestep=4.0)
+    with pytest.raises(ValueError, match="too short"):
+        config.ncycles
+
+
+def test_ncycles_updates_on_runtime_change(somd_engine_config):
+    """Test that ncycles updates when runtime is changed (SSOT consistency)."""
+    config = somd_engine_config(runtime=5.0, nmoves=25000, timestep=4.0)
+    assert config.ncycles == 50
+
+    config.runtime = 10.0
+    assert config.ncycles == 100
+
+
 def test_ligand_charge_validation(engine_config):
     """Test that ligand charge validation works correctly."""
 

@@ -117,9 +117,13 @@ class SomdConfig(_EngineConfig):
 
     ### Integrator - ncycles modified as required by a3fe ###
     timestep: float = _Field(4.0, description="Timestep in femtoseconds(fs)")
+    nmoves: int = _Field(
+        25000,
+        description="Number of moves per cycle. Default 25000 provides optimal checkpoint frequency.",
+    )
     runtime: _Union[int, float] = _Field(
         5.0,
-        description="Runtime in nanoseconds(ns), and must be a multiple of timestep",
+        description="Runtime in nanoseconds(ns), must be a multiple of timestep and ncycles will be calculated from runtime and nmoves",
     )
 
     ### Constraints ###
@@ -225,29 +229,37 @@ class SomdConfig(_EngineConfig):
     )
 
     @property
-    def nmoves(self) -> int:
+    def ncycles(self) -> int:
         """
-        Make sure runtime is a multiple of timestep
+        Calculate number of cycles from runtime, nmoves and timestep.
+        Formula: runtime = nmoves × ncycles × timestep
         """
         # Convert runtime to femtoseconds (ns -> fs)
         runtime_fs = _Decimal(str(self.runtime)) * _Decimal("1_000_000")
         timestep = _Decimal(str(self.timestep))
+        nmoves_dec = _Decimal(str(self.nmoves))
 
         # Check if runtime is a multiple of timestep
         remainder = runtime_fs % timestep
         if round(float(remainder), 4) != 0:
             raise ValueError(
-                (
-                    "Runtime must be a multiple of the timestep. "
-                    f"Runtime is {self.runtime} ns ({runtime_fs} fs), "
-                    f"and timestep is {self.timestep} fs."
-                )
+                f"Runtime must be a multiple of timestep. "
+                f"Runtime is {self.runtime} ns ({runtime_fs} fs), "
+                f"timestep is {self.timestep} fs."
             )
 
-        # Calculate the number of moves
-        nmoves = round(float(runtime_fs) / float(timestep))
+        # Calculate ncycles
+        total_steps = runtime_fs / timestep
+        ncycles = total_steps / nmoves_dec
+        ncycles_int = round(float(ncycles))
 
-        return nmoves
+        if ncycles_int < 1:
+            raise ValueError(
+                f"Runtime {self.runtime} ns is too short for nmoves={self.nmoves}. "
+                f"Decrease nmoves or increase runtime."
+            )
+
+        return ncycles_int
 
     @_model_validator(mode="after")
     def _check_rf_dielectric(self):
@@ -336,6 +348,7 @@ class SomdConfig(_EngineConfig):
         config_lines = [
             "### Integrator ###",
             f"timestep = {self.timestep} * femtosecond",
+            f"ncycles = {self.ncycles}",
             f"nmoves = {self.nmoves}",
             f"constraint = {self.constraint}",
             f"hydrogen mass repartitioning factor = {self.hydrogen_mass_factor}",

@@ -2,6 +2,10 @@
 Change Log
 ===============
 
+0.4.2
+====================
+- Added nmoves as a configurable field and changed ncycles to a computed property in engine_config.py to prevent memory overflow from single-cycle runtimes.
+
 0.4.1
 ====================
 - Fixed the statistical inefficiency timestep units from femtoseconds to nanoseconds.

@@ -250,7 +250,7 @@ class GromacsSystemPreparationConfig(_BaseSystemPreparationConfig):
     Pydantic model for holding system preparation configuration
     for running simulations with GROMACS.
 
-    Uses lambda values optimized for GROMACS soft-core parameters.
+    Uses lambda values selected for the GROMACS soft-core parameters.
     """
 
     lambda_values: _Dict[_LegType, _Dict[_StageType, _List[float]]] = _Field(
@@ -299,5 +299,5 @@ class GromacsSystemPreparationConfig(_BaseSystemPreparationConfig):
                 ],
             },
         },
-        description="Lambda values optimized for GROMACS.",
+        description="Lambda values for GROMACS.",
     )

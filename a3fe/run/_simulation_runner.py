@@ -186,7 +186,7 @@ class SimulationRunner(ABC):
                 else self.slurm_config.copy()
             )
 
-            # Create the SOMD config with default values if none is provided
+            # Create the engine config with default values if none is provided
             self.engine_config = (
                 engine_config
                 if engine_config is not None

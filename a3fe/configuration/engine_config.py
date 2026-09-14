@@ -10,32 +10,16 @@ import shlex as _shlex
 from abc import ABC as _ABC
 from abc import abstractmethod as _abstractmethod
 from decimal import Decimal as _Decimal
-from typing import (
-    Dict as _Dict,
-)
-from typing import (
-    List as _List,
-)
-from typing import (
-    Literal as _Literal,
-)
-from typing import (
-    Optional as _Optional,
-)
-from typing import (
-    Union as _Union,
-)
+from typing import Dict as _Dict
+from typing import List as _List
+from typing import Literal as _Literal
+from typing import Optional as _Optional
+from typing import Union as _Union
 
 import yaml as _yaml
-from pydantic import (
-    BaseModel as _BaseModel,
-)
-from pydantic import (
-    Field as _Field,
-)
-from pydantic import (
-    model_validator as _model_validator,
-)
+from pydantic import BaseModel as _BaseModel
+from pydantic import Field as _Field
+from pydantic import model_validator as _model_validator
 
 
 class _EngineConfig(_BaseModel, _ABC):
@@ -112,9 +96,7 @@ class _EngineConfig(_BaseModel, _ABC):
         pass
 
     def setup_lambda_arrays(self, stage_type) -> None:
-        """
-        Make sure GROMACS has the same stages as SOMD.
-        """
+        """Set up engine-specific lambda arrays if required."""
         pass
 
 
@@ -220,7 +202,7 @@ class SomdConfig(_EngineConfig):
     )
     ligand_charge: int = _Field(
         0,
-        description="Net charge of the ligand. If non-zero, must use PME for electrostatics.",
+        description="Charge change for the alchemical transformation. If non-zero, PME must be used.",
     )
 
     boresch_restraints_dictionary: _Optional[str] = _Field(
@@ -457,7 +439,7 @@ class SomdConfig(_EngineConfig):
 class GromacsConfig(_EngineConfig):
     """
     Pydantic model for holding GROMACS engine configuration.
-    Based on fragment-opt-abfe-benchmark mdp format with 4fs timestep.
+    Based on the fragment-opt-abfe-benchmark MDP format.
     """
 
     ### Simulation Type ###
@@ -585,7 +567,7 @@ class GromacsConfig(_EngineConfig):
 
     ligand_charge: int = _Field(
         0,
-        description="Net charge of the ligand. If non-zero, must use PME for electrostatics.",
+        description="Charge change for the alchemical transformation.",
     )
 
     free_energy: _Literal["yes", "no"] = _Field("yes", description="Enable FEP")
@@ -648,6 +630,14 @@ class GromacsConfig(_EngineConfig):
         """Return timestep in femtoseconds for compatibility with SomdConfig."""
         return self.dt * 1000.0  # ps to fs
 
+    @_model_validator(mode="after")
+    def _check_ligand_charge(self):
+        if self.ligand_charge != 0 and self.coulombtype != "PME":
+            raise ValueError(
+                "Charge difference is non-zero but Coulomb type is not PME."
+            )
+        return self
+
     def setup_lambda_arrays(self, stage_type) -> None:
         """
         Set up GROMACS-specific bonded/coul/vdw lambda arrays.
@@ -659,8 +649,7 @@ class GromacsConfig(_EngineConfig):
         """
         if self.lambda_values is None:
             raise ValueError(
-                "lambda_values must be set before calling _get_lambda_arrays_for_stage(). "
-                "This should be set from GromacsSystemPreparationConfig."
+                "lambda_values must be set before setting up lambda arrays."
             )
 
         stage = stage_type.name.lower()
@@ -738,39 +727,14 @@ class GromacsConfig(_EngineConfig):
                     f"than one nstdhdl interval ({self.nstdhdl} steps)."
                 )
 
-        # Find lambda state index from the active lambda array
-        # Priority: find array containing lambda_val, otherwise use varying array
-        lambda_array = None
-
-        # First, try to find array containing lambda_val
-        if self.vdw_lambdas and lambda_val in self.vdw_lambdas:
-            lambda_array = self.vdw_lambdas
-        elif self.coul_lambdas and lambda_val in self.coul_lambdas:
-            lambda_array = self.coul_lambdas
-        elif self.bonded_lambdas and lambda_val in self.bonded_lambdas:
-            lambda_array = self.bonded_lambdas
-
-        # If not found, use varying array (not all values are the same)
-        if lambda_array is None:
-            if self.vdw_lambdas and len(set(self.vdw_lambdas)) > 1:
-                lambda_array = self.vdw_lambdas
-            elif self.coul_lambdas and len(set(self.coul_lambdas)) > 1:
-                lambda_array = self.coul_lambdas
-            elif self.bonded_lambdas and len(set(self.bonded_lambdas)) > 1:
-                lambda_array = self.bonded_lambdas
-
-        if lambda_array is None:
-            raise ValueError(
-                f"Lambda {lambda_val} not found in any lambda array. "
-                f"bonded: {self.bonded_lambdas}, "
-                f"coul: {self.coul_lambdas}, "
-                f"vdw: {self.vdw_lambdas}"
-            )
-
+        if self.lambda_values is None:
+            raise ValueError("No lambda values specified.")
         try:
-            self.init_lambda_state = lambda_array.index(lambda_val)
-        except ValueError:
-            raise ValueError(f"Lambda {lambda_val} not found in {lambda_array}")
+            self.init_lambda_state = self.lambda_values.index(lambda_val)
+        except ValueError as e:
+            raise ValueError(
+                f"Lambda {lambda_val} not found in {self.lambda_values}"
+            ) from e
 
         # Build mdp content
         mdp_lines = [
@@ -865,6 +829,7 @@ class GromacsConfig(_EngineConfig):
             mdp_lines.extend(
                 [
                     ";----------------------------------------------------",
+                    "; NEIGHBOR SEARCHING",
                     ";----------------------------------------------------",
                     f"cutoff-scheme       = {self.cutoff_scheme}",
                     f"nstlist             = {self.nstlist:<6} ; {self.nstlist * self.dt * 1000:.0f} fs",
@@ -884,6 +849,7 @@ class GromacsConfig(_EngineConfig):
 
             bonds_section = [
                 ";----------------------------------------------------",
+                "; BONDS",
                 ";----------------------------------------------------",
                 f"constraint_algorithm   = {self.constraint_algorithm:<9} ; holonomic constraints",
                 f"constraints            = {self.constraints:<9}{constraints_comment}",

@@ -45,7 +45,7 @@ def _add_gromacs_alchemical_ions(
     ligand: _BSS._SireWrappers._molecule.Molecule,  # type: ignore
     ligand_charge: int,
 ) -> None:
-    """Add co-alchemical counterions for a GROMACS ligand decoupling."""
+    """Make existing counterions co-alchemical for a GROMACS decoupling."""
     ion_charge = -1 if ligand_charge > 0 else 1
     ions = [
         mol
@@ -598,22 +598,21 @@ class Leg(_SimulationRunner):
                     )
 
         # Give the output files unique names
+        coordinate_prefix, coordinate_extension = (
+            ("gromacs", "gro")
+            if self.engine_type == _EngineType.GROMACS
+            else ("somd", "rst7")
+        )
         equil_numbers = [int(outdir.split("_")[-1]) for outdir in outdirs_to_run]
         for equil_number, outdir in zip(equil_numbers, outdirs_to_run):
-            if self.engine_type == _EngineType.GROMACS:
-                _subprocess.run(
-                    [
-                        "mv",
-                        f"{outdir}/gromacs.gro",
-                        f"{outdir}/gromacs_{equil_number}.gro",
-                    ],
-                    check=True,
-                )
-            else:
-                _subprocess.run(
-                    ["mv", f"{outdir}/somd.rst7", f"{outdir}/somd_{equil_number}.rst7"],
-                    check=True,
-                )
+            _subprocess.run(
+                [
+                    "mv",
+                    f"{outdir}/{coordinate_prefix}.{coordinate_extension}",
+                    f"{outdir}/{coordinate_prefix}_{equil_number}.{coordinate_extension}",
+                ],
+                check=True,
+            )
 
         # Load the system and mark the ligand to be decoupled
         self._logger.info("Loading pre-equilibrated system...")
@@ -715,20 +714,18 @@ class Leg(_SimulationRunner):
                 f"Setting up {self.leg_type.name} leg {stage_type.name} stage"
             )
             restraint = self.restraints[0] if self.leg_type == _LegType.BOUND else None
-            if self.engine_type == _EngineType.GROMACS:
-                protocol = _BSS.Protocol.FreeEnergy(
-                    runtime=dummy_runtime * _BSS.Units.Time.nanosecond,  # type: ignore
-                    lam_vals=dummy_lam_vals,
-                    perturbation_type="full",
-                )
-            else:
-                protocol = _BSS.Protocol.FreeEnergy(
-                    runtime=dummy_runtime * _BSS.Units.Time.nanosecond,  # type: ignore
-                    lam_vals=dummy_lam_vals,
-                    perturbation_type=stage_type.bss_perturbation_type,
-                )
-            self._logger.info(f"Perturbation type: {stage_type.bss_perturbation_type}")
-            # Ensure we remove the velocites to avoid RST7 file writing issues, as before
+            perturbation_type = (
+                "full"
+                if self.engine_type == _EngineType.GROMACS
+                else stage_type.bss_perturbation_type
+            )
+            protocol = _BSS.Protocol.FreeEnergy(
+                runtime=dummy_runtime * _BSS.Units.Time.nanosecond,  # type: ignore
+                lam_vals=dummy_lam_vals,
+                perturbation_type=perturbation_type,
+            )
+            self._logger.info(f"Perturbation type: {perturbation_type}")
+            # Remove velocities to avoid RST7 file writing issues, as before
             run_engine = (
                 "gromacs" if self.engine_type == _EngineType.GROMACS else "somd"
             )
@@ -756,25 +753,24 @@ class Leg(_SimulationRunner):
             for file in _glob.glob(f"{stage_input_dir}/lambda_*"):
                 _subprocess.run(["rm", "-rf", file], check=True)
 
-            # Create a seperate config for this stage
+            # Create a separate config for this stage
             stage_config = self.engine_config.copy()
             if self.engine_type == _EngineType.GROMACS and lig_charge != 0:
                 stage_config.refcoord_scaling = "com"
 
             # Copy the final coordinates from the ensemble equilibration stage to the stage input directory
             # and, if this is the bound stage, read in the restraints
+            coordinate_prefix, coordinate_extension = (
+                ("somd", "rst7")
+                if self.engine_type == _EngineType.SOMD
+                else ("gromacs", "gro")
+            )
             for i in range(self.ensemble_size):
                 ens_equil_output_dir = f"{self.base_dir}/ensemble_equilibration_{i + 1}"
-                coordinates_file = (
-                    f"{ens_equil_output_dir}/somd_{i + 1}.rst7"
-                    if self.engine_type == _EngineType.SOMD
-                    else f"{ens_equil_output_dir}/gromacs_{i + 1}.gro"
-                )
+                coordinate_file = f"{coordinate_prefix}_{i + 1}.{coordinate_extension}"
                 _shutil.copy(
-                    coordinates_file,
-                    f"{stage_input_dir}/somd_{i + 1}.rst7"
-                    if self.engine_type == _EngineType.SOMD
-                    else f"{stage_input_dir}/gromacs_{i + 1}.gro",
+                    f"{ens_equil_output_dir}/{coordinate_file}",
+                    f"{stage_input_dir}/{coordinate_file}",
                 )
 
                 if self.leg_type == _LegType.BOUND:

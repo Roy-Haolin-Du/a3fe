@@ -740,7 +740,7 @@ def get_time_series_multiwindow_mbar(
         else 298.15
     )
 
-    if not use_slurms[0] or engine_type == _EngineType.GROMACS:
+    if not use_slurms[0]:
         # Run MBAR in parallel
         with _get_context("spawn").Pool() as pool:
             results = pool.starmap(
@@ -779,6 +779,8 @@ def get_time_series_multiwindow_mbar(
                     percentage_start=start_frac * 100,
                     subsampling=False,
                     equilibrated=equilibrated,
+                    engine_type=engine_type,
+                    temperature=mbar_temperature,
                 )
             )
 

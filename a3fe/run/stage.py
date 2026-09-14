@@ -221,6 +221,7 @@ class Stage(_SimulationRunner):
     def lam_vals(self, value) -> None:
         self._logger.info("Modifying/ creating lambda values")
         self.engine_config.lambda_values = value
+        self.engine_config.setup_lambda_arrays(self.stage_type)
 
     @property
     def lam_windows(self) -> _List[_LamWindow]:
@@ -387,7 +388,7 @@ class Stage(_SimulationRunner):
                 if runtime is None:
                     runtime = 0.2  # ns
 
-            # Run initial SOMD simulations
+            # Run the initial simulations
             for win in self.lam_windows:
                 win.run(run_nos=run_nos, runtime=runtime)  # type: ignore
                 win._update_log()
@@ -803,8 +804,7 @@ class Stage(_SimulationRunner):
                 if self.engine_type == _EngineType.GROMACS
                 else 298.15
             )
-            # GROMACS doesn't need SLURM (Python function can use multiprocessing)
-            if not slurm or self.engine_type == _EngineType.GROMACS:
+            if not slurm:
                 free_energies, errors, mbar_outfiles, _ = _run_mbar(
                     engine_type=self.engine_type,
                     run_nos=run_nos,
@@ -825,6 +825,8 @@ class Stage(_SimulationRunner):
                     percentage_start=0,
                     subsampling=subsampling,
                     equilibrated=True,
+                    engine_type=self.engine_type,
+                    temperature=mbar_temperature,
                 )
 
                 free_energies, errors, *_ = _collect_mbar_slurm(
@@ -1068,8 +1070,7 @@ class Stage(_SimulationRunner):
             if self.engine_type == _EngineType.GROMACS
             else 298.15
         )
-        # GROMACS doesn't need SLURM (Python function can use multiprocessing)
-        if not slurm or self.engine_type == _EngineType.GROMACS:
+        if not slurm:
             # Now run mbar with multiprocessing to speed things up
             with _get_context("spawn").Pool() as pool:
                 results = pool.starmap(
@@ -1091,7 +1092,7 @@ class Stage(_SimulationRunner):
                         )
                     ],
                 )
-        else:  # Use SLURM (SOMD only)
+        else:  # Use SLURM
             frac_jobs = []
             results = []
             for start_percent, end_percent in zip(start_percents, end_percents):
@@ -1105,6 +1106,8 @@ class Stage(_SimulationRunner):
                         percentage_start=start_percent,
                         subsampling=False,
                         equilibrated=equilibrated,
+                        engine_type=self.engine_type,
+                        temperature=mbar_temperature,
                     )
                 )
 

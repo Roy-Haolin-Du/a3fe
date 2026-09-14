@@ -3,18 +3,13 @@
 from enum import Enum as _Enum
 from typing import Any as _Any
 from typing import List as _List
+from typing import Type as _Type
 
 import yaml as _yaml
 
-from .engine_config import (
-    GromacsConfig as _GromacsConfig,
-)
-from .engine_config import (
-    SomdConfig as _SomdConfig,
-)
-from .engine_config import (
-    _EngineConfig,
-)
+from .engine_config import GromacsConfig as _GromacsConfig
+from .engine_config import SomdConfig as _SomdConfig
+from .engine_config import _EngineConfig
 
 __all__ = [
     "JobStatus",
@@ -108,7 +103,7 @@ class EngineType(_YamlSerialisableEnum):
     GROMACS = 2
 
     @property
-    def engine_config(self) -> _EngineConfig:
+    def engine_config(self) -> _Type[_EngineConfig]:
         """Return the configuration class for the engine."""
         engine_configs = {
             EngineType.SOMD: _SomdConfig,
@@ -118,6 +113,7 @@ class EngineType(_YamlSerialisableEnum):
 
     @property
     def system_prep_config(self):
+        """Return the system preparation configuration class."""
         from .system_prep_config import (
             GromacsSystemPreparationConfig as _GromacsSystemPreparationConfig,
         )
@@ -125,7 +121,6 @@ class EngineType(_YamlSerialisableEnum):
             SomdSystemPreparationConfig as _SomdSystemPreparationConfig,
         )
 
-        """Return the system preparation configuration class."""
         system_prep_configs = {
             EngineType.SOMD: _SomdSystemPreparationConfig,
             EngineType.GROMACS: _GromacsSystemPreparationConfig,

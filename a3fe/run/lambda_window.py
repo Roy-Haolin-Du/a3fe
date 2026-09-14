@@ -377,21 +377,18 @@ class LamWindow(_SimulationRunner):
                 out_file = sim.output_dir + "/simfile_equilibrated.dat"
                 header_chars = ("#",)
 
-            if not _os.path.exists(in_file):
-                continue
-
             with open(in_file, "r") as ifile:
                 lines = ifile.readlines()
 
             # Figure out how many lines come before the data
             non_data_lines = 0
             for line in lines:
-                if line.startswith(header_chars):
+                if line.startswith(header_chars) or not line.strip():
                     non_data_lines += 1
                 else:
                     break
 
-            # Overwrite the original file with one containing only the equilibrated data
+            # Write a new file containing only the equilibrated data
             with open(out_file, "w") as ofile:
                 # First, write the header
                 for line in lines[:non_data_lines]:

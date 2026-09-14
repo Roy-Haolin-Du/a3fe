@@ -450,6 +450,15 @@ def test_analysis_all_runs_slurm(restrain_stage):
 
 @pytest.mark.skipif(not SLURM_PRESENT, reason="SLURM not present")
 @pytest.mark.skipif(not RUN_SLURM_TESTS, reason="RUN_SLURM_TESTS is False")
+def test_analysis_all_runs_gromacs_slurm(gromacs_discharge_stage):
+    """Check that the GROMACS analysis works through SLURM."""
+    res, err = gromacs_discharge_stage.analyse(slurm=True)
+    assert res.mean() == pytest.approx(168.9001, abs=1e-3)
+    assert err.mean() == pytest.approx(0.3085, abs=1e-3)
+
+
+@pytest.mark.skipif(not SLURM_PRESENT, reason="SLURM not present")
+@pytest.mark.skipif(not RUN_SLURM_TESTS, reason="RUN_SLURM_TESTS is False")
 def test_analysis_all_runs_fraction_slurm(restrain_stage):
     """Check that the analysis works on all runs."""
     res, err = restrain_stage.analyse(fraction=0.5, slurm=True)
@@ -473,6 +482,14 @@ def test_convergence_analysis_slurm(restrain_stage):
     stage = restrain_stage
     _, free_energies = stage.analyse_convergence(slurm=True)
     assert np.allclose(free_energies, EXPECTED_CONVERGENCE_RESULTS, atol=1e-2)
+
+
+@pytest.mark.skipif(not SLURM_PRESENT, reason="SLURM not present")
+@pytest.mark.skipif(not RUN_SLURM_TESTS, reason="RUN_SLURM_TESTS is False")
+def test_convergence_analysis_gromacs_slurm(gromacs_discharge_stage):
+    """Test the GROMACS convergence analysis through SLURM."""
+    _, free_energies = gromacs_discharge_stage.analyse_convergence(slurm=True)
+    assert np.allclose(free_energies, EXPECTED_GROMACS_CONVERGENCE_RESULTS, atol=1e-2)
 
 
 @pytest.mark.skipif(not SLURM_PRESENT, reason="SLURM not present")

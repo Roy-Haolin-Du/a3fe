@@ -18,6 +18,7 @@ from ..configuration import EngineType as _EngineType
 from ..configuration import JobStatus as _JobStatus
 from ..configuration import SlurmConfig as _SlurmConfig
 from ..configuration import _EngineConfig
+from ..read._process_gmx_files import read_xvg_dhdl as _read_xvg_dhdl
 from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._virtual_queue import Job as _Job
 from ._virtual_queue import VirtualQueue as _VirtualQueue
@@ -142,7 +143,7 @@ class Simulation(_SimulationRunner):
             self._validate_input()
             self.job: _Optional[_Job] = None
             self._running: bool = False
-            # Select the correct rst7 and, if supplied, restraints
+            # Select the correct coordinate and, if supplied, restraint files
             self._select_input_files()
 
             # Save state and update log
@@ -224,54 +225,36 @@ class Simulation(_SimulationRunner):
                 raise FileNotFoundError("Required input file " + file + " not found.")
 
     def _select_input_files(self) -> None:
-        """Select the correct rst7 and, if supplied, restraints,
-        according to the run number."""
+        """Select the coordinate and restraint files for this run."""
         if self.engine_type == _EngineType.SOMD:
-            # Check if we have multiple rst7 files, or only one
-            rst7_files = _glob.glob(_os.path.join(self.input_dir, "*.rst7"))
-            if len(rst7_files) == 0:
-                raise FileNotFoundError("No rst7 files found in input directory")
-            elif len(rst7_files) > 1:
-                # Rename the rst7 file for this run to somd.rst7 and delete any other
-                # rst7 files
-                self._logger.debug("Multiple rst7 files found - renaming")
-                _subprocess.run(
-                    [
-                        "mv",
-                        _os.path.join(self.input_dir, f"somd_{self.run_no}.rst7"),
-                        _os.path.join(self.input_dir, "somd.rst7"),
-                    ]
-                )
-                unwanted_rst7_files = _glob.glob(
-                    _os.path.join(self.input_dir, "somd_?.rst7")
-                )
-                for file in unwanted_rst7_files:
-                    _subprocess.run(["rm", file])
-            else:
-                self._logger.info("Only one rst7 file found - not renaming")
-
+            file_prefix = "somd"
+            file_extension = "rst7"
         elif self.engine_type == _EngineType.GROMACS:
-            gro_files = _glob.glob(_os.path.join(self.input_dir, "*.gro"))
-            if len(gro_files) == 0:
-                raise FileNotFoundError("No gro files found in input directory")
-            elif len(gro_files) > 1:
-                self._logger.debug("Multiple gro files found - renaming")
-                _subprocess.run(
-                    [
-                        "mv",
-                        _os.path.join(self.input_dir, f"gromacs_{self.run_no}.gro"),
-                        _os.path.join(self.input_dir, "gromacs.gro"),
-                    ]
-                )
-                unwanted_gro_files = _glob.glob(
-                    _os.path.join(self.input_dir, "gromacs_?.gro")
-                )
-                for file in unwanted_gro_files:
-                    _subprocess.run(["rm", file])
-            else:
-                self._logger.info("Only one gro file found - not renaming")
+            file_prefix = "gromacs"
+            file_extension = "gro"
         else:
             raise ValueError(f"Engine type {self.engine_type} not supported")
+
+        coordinate_files = _glob.glob(f"{self.input_dir}/*.{file_extension}")
+        if len(coordinate_files) == 0:
+            raise FileNotFoundError(
+                f"No {file_extension} files found in input directory"
+            )
+        elif len(coordinate_files) > 1:
+            source_file = (
+                f"{self.input_dir}/{file_prefix}_{self.run_no}.{file_extension}"
+            )
+            target_file = f"{self.input_dir}/{file_prefix}.{file_extension}"
+            self._logger.debug(f"Multiple {file_extension} files found - renaming")
+            _subprocess.run(["mv", source_file, target_file])
+            unwanted_files = _glob.glob(
+                f"{self.input_dir}/{file_prefix}_?.{file_extension}"
+            )
+            for file in unwanted_files:
+                _subprocess.run(["rm", file])
+        else:
+            self._logger.info(f"Only one {file_extension} file found - not renaming")
+
         # Deal with restraints. Get the name of the restraint file for this run
         old_restr_file = _os.path.join(self.input_dir, f"restraint_{self.run_no}.txt")
 
@@ -352,27 +335,20 @@ class Simulation(_SimulationRunner):
         """
         if self.engine_type == _EngineType.GROMACS:
             data_file = f"{self.output_dir}/prod/prod.xvg"
-            if not _pathlib.Path(data_file).is_file():
-                return 0
-            if _os.stat(data_file).st_size == 0:
+            if (
+                not _pathlib.Path(data_file).is_file()
+                or _os.stat(data_file).st_size == 0
+            ):
                 return 0
 
-            last_time_ps = None
-            with open(data_file, "rt") as f:
-                for line_number, line in enumerate(f, start=1):
-                    stripped = line.strip()
-                    if not stripped or stripped.startswith(("#", "@", "&")):
-                        continue
-                    try:
-                        last_time_ps = float(stripped.split()[0])
-                    except (IndexError, ValueError) as e:
-                        raise ValueError(
-                            f"Could not read time from {data_file}, line "
-                            f"{line_number}: {stripped!r}"
-                        ) from e
-
-            # A header-only XVG is normal while grompp/mdrun are starting.
-            return 0 if last_time_ps is None else last_time_ps / 1000.0
+            last_line = (
+                _subprocess.check_output(["tail", "-1", data_file])
+                .decode("utf-8")
+                .strip()
+            )
+            if not last_line or last_line.startswith(("#", "@", "&")):
+                return 0
+            return float(last_line.split()[0]) / 1000.0
         else:  # SOMD
             data_simfile = f"{self.output_dir}/simfile.dat"
             if not _pathlib.Path(data_simfile).is_file():
@@ -462,30 +438,26 @@ class Simulation(_SimulationRunner):
         # "Simulation took" line
         if self.slurm_output_files:
             for file in self.slurm_output_files:
-                if not self._check_simulation_success(file):
+                if not self._somd_run_completed(file):
                     return True
 
         return False
 
-    def _check_simulation_success(self, slurm_file: str) -> bool:
-        """
-        Check if simulation completed successfully based on engine type.
+    def _somd_run_completed(self, slurm_file: str) -> bool:
+        """Return whether a SOMD simulation completed successfully.
 
         Parameters
         ----------
         slurm_file : str
-            Path to SLURM output file
+            Path to the SLURM output file.
 
         Returns
         -------
-        success : bool
-            True if simulation succeeded, False otherwise
+        bool
+            Whether the simulation completed successfully.
         """
         with open(slurm_file, "rt") as f:
-            content = f.read()
-
-        # SOMD success: "Simulation took" line in SLURM output
-        return "Simulation took" in content
+            return "Simulation took" in f.read()
 
     def _gromacs_run_completed(self) -> bool:
         """Return whether GROMACS production completed successfully."""
@@ -541,7 +513,7 @@ class Simulation(_SimulationRunner):
         self, equilibrated_only: bool = False, endstate: bool = False
     ) -> _Tuple[_np.ndarray, _np.ndarray]:
         """
-        Read the gradients from the output file. These can be either the infiniesimal gradients
+        Read the gradients from the output file. These can be either the infinitesimal gradients
         at the given value of lambda, or the differences in energy between the end state
         Hamiltonians.
 
@@ -552,7 +524,7 @@ class Simulation(_SimulationRunner):
             or the whole simulation (False).
         endstate : bool, Optional, default: False
             Whether to return the difference in energy between the end state Hamiltonians (True)
-            or the infiniesimal gradients at the given value of lambda (False).
+            or the infinitesimal gradients at the given value of lambda (False).
 
         Returns
         -------
@@ -561,32 +533,33 @@ class Simulation(_SimulationRunner):
         grads : np.ndarray
             Array of gradients, in kcal/mol.
         """
-        # GROMACS: read .xvg file
         if self.engine_type == _EngineType.GROMACS:
             filename = (
                 "prod/prod_equilibrated.xvg" if equilibrated_only else "prod/prod.xvg"
             )
-            times = []
-            grads = []
+            times, data = _read_xvg_dhdl(_os.path.join(self.output_dir, filename))
 
-            with open(_os.path.join(self.output_dir, filename), "r") as f:
-                for line in f:
-                    if line.startswith(("#", "@")) or not line.strip():
-                        continue
-                    vals = line.split()
-                    time_ps = float(vals[0])
+            if endstate:
+                final_state_column = 3 + len(self.engine_config.lambda_values)
+                grads = data[:, final_state_column] - data[:, 4]
+            else:
+                lambda_arrays = [
+                    self.engine_config.coul_lambdas,
+                    self.engine_config.vdw_lambdas,
+                    self.engine_config.bonded_lambdas,
+                ]
+                gradient_columns = [
+                    i
+                    for i, lambda_array in enumerate(lambda_arrays, start=1)
+                    if lambda_array is not None and len(set(lambda_array)) > 1
+                ]
+                if len(gradient_columns) != 1:
+                    raise ValueError(
+                        "Expected exactly one varying GROMACS lambda component."
+                    )
+                grads = data[:, gradient_columns[0]]
 
-                    if endstate:
-                        energy_start = float(vals[3])
-                        energy_end = float(vals[-2])
-                        grad_kj = energy_end - energy_start
-                    else:
-                        grad_kj = float(vals[1])
-
-                    times.append(time_ps / 1000.0)
-                    grads.append(grad_kj / 4.184)
-
-            return _np.array(times), _np.array(grads)
+            return times / 1000.0, grads / 4.184
 
         # SOMD: read simfile.dat
         if equilibrated_only:

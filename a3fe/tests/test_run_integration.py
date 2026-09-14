@@ -310,7 +310,7 @@ class TestGromacsSlurmIntegration:
                 assert sim.tot_simtime == pytest.approx(runtime)
 
         gromacs_slurm_discharge_stage.set_equilibration_time(0)
-        free_energies, errors = gromacs_slurm_discharge_stage.analyse()
+        free_energies, errors = gromacs_slurm_discharge_stage.analyse(slurm=True)
 
         assert len(free_energies) == gromacs_slurm_discharge_stage.ensemble_size
         assert len(errors) == gromacs_slurm_discharge_stage.ensemble_size

@@ -117,9 +117,9 @@ class CalcSet(_SimulationRunner):
             self._calc_args = calc_args
 
             # Ensure that all calculations share the same engine settings by adding these if they are not present
-            calc_engine_type = calc_args.get("engine_type", self.engine_type)
             if calc_args.get("engine_type") is None:
                 calc_args["engine_type"] = self.engine_type
+            calc_engine_type = calc_args["engine_type"]
             if calc_args.get("engine_config") is None:
                 calc_args["engine_config"] = (
                     self.engine_config

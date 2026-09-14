@@ -4,7 +4,9 @@ __all__ = ["run_mbar"]
 
 import glob as _glob
 import os as _os
+import shlex as _shlex
 import subprocess as _subprocess
+import sys as _sys
 from time import sleep as _sleep
 from typing import Dict as _Dict
 from typing import List as _List
@@ -251,9 +253,11 @@ def submit_mbar_slurm(
     subsampling: bool = False,
     equilibrated: bool = True,
     wait: bool = False,
+    engine_type: _EngineType = _EngineType.SOMD,
+    temperature: float = 298.15,
 ) -> _Tuple[_List[_Job], _List[str], _List[str]]:
     """
-    Submit slurm jobs to run MBAR on SOMD output files.
+    Submit slurm jobs to run MBAR on output files.
 
     Parameters
     ----------
@@ -281,6 +285,10 @@ def submit_mbar_slurm(
         otherwise simfile.dat will be used.
     wait: bool, default: False
         Whether to wait for the job to complete or not.
+    engine_type : EngineType, Optional, default: EngineType.SOMD
+        The engine type that produced the output files.
+    temperature : float, Optional, default: 298.15
+        Temperature in K to use when analysing GROMACS output files.
 
     Returns
     -------
@@ -296,13 +304,22 @@ def submit_mbar_slurm(
         so that they can be cleaned up later.
     """
 
-    tmp_files = _prepare_simfiles(
-        output_dir=output_dir,
-        run_nos=run_nos,
-        percentage_end=percentage_end,
-        percentage_start=percentage_start,
-        equilibrated=equilibrated,
-    )
+    if engine_type == _EngineType.GROMACS:
+        if subsampling:
+            raise NotImplementedError(
+                "Subsampling is not implemented for GROMACS MBAR."
+            )
+        percentage_end = float(percentage_end)
+        percentage_start = float(percentage_start)
+        tmp_files = []
+    else:
+        tmp_files = _prepare_simfiles(
+            output_dir=output_dir,
+            run_nos=run_nos,
+            percentage_end=percentage_end,
+            percentage_start=percentage_start,
+            equilibrated=equilibrated,
+        )
 
     # Add MBAR command and run for each run.
     mbar_out_files = []
@@ -320,20 +337,40 @@ def submit_mbar_slurm(
         slurm_config.output = slurm_outfile
 
         # Create the command.
-        cmd_list = [
-            "analyse_freenrg",
-            "mbar",
-            "-i",
-            f"{output_dir}/lambda*/run_{str(run_no).zfill(2)}/simfile_truncated_{round(percentage_end, 3)}_end_{round(percentage_start, 3)}_start.dat",
-            "-p",
-            "100",
-            "--overlap",
-            "--output",
-            outfile,
-        ]
-        if subsampling:
-            cmd_list.append("--subsampling")
-        slurm_cmd = " ".join(cmd_list)
+        if engine_type == _EngineType.GROMACS:
+            cmd_list = [
+                _sys.executable,
+                "-m",
+                "a3fe.analyse._gmx_mbar_worker",
+                "--output-dir",
+                output_dir,
+                "--run-no",
+                str(run_no),
+                "--percentage-end",
+                str(percentage_end),
+                "--percentage-start",
+                str(percentage_start),
+                "--temperature",
+                str(temperature),
+            ]
+            if not equilibrated:
+                cmd_list.append("--unequilibrated")
+            slurm_cmd = _shlex.join(cmd_list)
+        else:
+            cmd_list = [
+                "analyse_freenrg",
+                "mbar",
+                "-i",
+                f"{output_dir}/lambda*/run_{str(run_no).zfill(2)}/simfile_truncated_{round(percentage_end, 3)}_end_{round(percentage_start, 3)}_start.dat",
+                "-p",
+                "100",
+                "--overlap",
+                "--output",
+                outfile,
+            ]
+            if subsampling:
+                cmd_list.append("--subsampling")
+            slurm_cmd = " ".join(cmd_list)
 
         # Create and submit the job
         script_name = f"{output_dir}/freenrg-MBAR-run_{str(run_no).zfill(2)}_{round(percentage_end, 3)}_end_{round(percentage_start, 3)}_start"

@@ -193,8 +193,9 @@ def test_analysis_all_runs(restrain_stage):
 def test_analysis_all_runs_gromacs(gromacs_discharge_stage):
     """Check that the GROMACS analysis works on all runs."""
     res, err = gromacs_discharge_stage.analyse()
-    assert res.mean() == pytest.approx(168.9001, abs=1e-3)
-    assert err.mean() == pytest.approx(0.3085, abs=1e-3)
+    # The mean should agree with the 20--100 ps GROMACS BAR reference.
+    assert res.mean() == pytest.approx(168.9124, abs=0.1)
+    assert err.mean() == pytest.approx(0.6047, abs=1e-3)
 
 
 def test_analysis_all_runs_fraction(restrain_stage):
@@ -454,7 +455,7 @@ def test_analysis_all_runs_gromacs_slurm(gromacs_discharge_stage):
     """Check that the GROMACS analysis works through SLURM."""
     res, err = gromacs_discharge_stage.analyse(slurm=True)
     assert res.mean() == pytest.approx(168.9001, abs=1e-3)
-    assert err.mean() == pytest.approx(0.3085, abs=1e-3)
+    assert err.mean() == pytest.approx(0.6047, abs=1e-3)
 
 
 @pytest.mark.skipif(not SLURM_PRESENT, reason="SLURM not present")

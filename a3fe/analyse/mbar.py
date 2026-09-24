@@ -210,7 +210,8 @@ def _run_mbar_gromacs(
 
         lam_vals = _get_lambda_values_from_xvg_files(xvg_files)
         delta_f = _np.array(delta_f) * kt
-        d_delta_f = _np.array(d_delta_f) * kt
+        # Convert PyMBAR asymptotic standard errors to Gaussian 95 % C.I.s.
+        d_delta_f = _np.array(d_delta_f) * kt * 1.96
         overlap = _get_overlap_matrix(mbar)
 
         free_energies.append(delta_f[0, -1])

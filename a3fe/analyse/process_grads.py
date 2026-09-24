@@ -734,11 +734,7 @@ def get_time_series_multiwindow_mbar(
             "engine_type is not the same for all lambda windows. Please ensure that "
             "engine_type is the same for all lambda windows."
         )
-    mbar_temperature = (
-        lambda_windows[0].engine_config.ref_t
-        if engine_type == _EngineType.GROMACS
-        else 298.15
-    )
+    mbar_temperature = lambda_windows[0].engine_config.analysis_temperature
 
     if not use_slurms[0]:
         # Run MBAR in parallel

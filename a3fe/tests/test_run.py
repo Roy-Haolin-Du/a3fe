@@ -15,7 +15,7 @@ import pytest
 
 import a3fe as a3
 from a3fe.analyse.detect_equil import dummy_check_equil_multiwindow
-from a3fe.run.leg import _add_gromacs_alchemical_ions
+from a3fe.engines import engine_backend_registry as _engine_backend_registry
 
 LEGS_WITH_STAGES = {"bound": ["discharge", "vanish"], "free": ["discharge", "vanish"]}
 
@@ -83,6 +83,30 @@ def test_logging_level(calc):
     calc3.stream_log_level = logging.WARNING
     assert calc3._logger.handlers[1].level == logging.WARNING
     assert calc3._logger.handlers[0].level == logging.DEBUG
+
+
+def test_gromacs_nested_outputs_are_cleaned():
+    """Check that clean removes nested GROMACS outputs but retains inputs."""
+    with TemporaryDirectory() as dirname:
+        simulation = object.__new__(a3.Simulation)
+        simulation.base_dir = dirname
+        simulation.output_dir = dirname
+        simulation.engine_type = a3.EngineType.GROMACS
+        simulation._logger = logging.getLogger("test_gromacs_clean")
+
+        input_file = pathlib.Path(dirname, "gromacs.top")
+        input_file.touch()
+        for stage in ["em", "prod"]:
+            stage_dir = pathlib.Path(dirname, stage)
+            stage_dir.mkdir()
+            pathlib.Path(stage_dir, f"{stage}.cpt").touch()
+
+        simulation.clean()
+
+        assert input_file.exists()
+        assert all(
+            not any(pathlib.Path(dirname, stage).iterdir()) for stage in ["em", "prod"]
+        )
 
 
 def test_update_paths(calc):
@@ -306,7 +330,9 @@ def test_add_gromacs_alchemical_ions(charged_sys):
     system.updateMolecule(0, ligand)
     ligand_charge = round(ligand.charge().value())
 
-    _add_gromacs_alchemical_ions(system, ligand, ligand_charge)
+    _engine_backend_registry[a3.EngineType.GROMACS].add_alchemical_ions(
+        system, ligand, ligand_charge
+    )
 
     alchemical_ions = [
         mol for mol in system if "AlchemicalIon" in mol._sire_object.property_keys()

@@ -289,7 +289,7 @@ class Stage(_SimulationRunner):
         -------
         None
         """
-        if self.engine_type == _EngineType.GROMACS and adaptive:
+        if adaptive and not self.engine_backend.supports_adaptive:
             raise NotImplementedError(
                 "Adaptive GROMACS runs are not supported yet because repeated "
                 "submissions do not currently continue from checkpoints. Use "
@@ -799,11 +799,7 @@ class Stage(_SimulationRunner):
                     win._write_equilibrated_simfiles()
 
             # Run MBAR and compute mean and 95 % C.I. of free energy
-            mbar_temperature = (
-                self.engine_config.ref_t
-                if self.engine_type == _EngineType.GROMACS
-                else 298.15
-            )
+            mbar_temperature = self.engine_config.analysis_temperature
             if not slurm:
                 free_energies, errors, mbar_outfiles, _ = _run_mbar(
                     engine_type=self.engine_type,
@@ -1065,11 +1061,7 @@ class Stage(_SimulationRunner):
             for win in self.lam_windows:
                 win._write_equilibrated_simfiles()
 
-        mbar_temperature = (
-            self.engine_config.ref_t
-            if self.engine_type == _EngineType.GROMACS
-            else 298.15
-        )
+        mbar_temperature = self.engine_config.analysis_temperature
         if not slurm:
             # Now run mbar with multiprocessing to speed things up
             with _get_context("spawn").Pool() as pool:

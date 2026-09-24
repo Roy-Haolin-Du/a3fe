@@ -352,30 +352,13 @@ class LamWindow(_SimulationRunner):
             raise ValueError("Equilibration time cannot be negative.")
 
         # Get the index of the first equilibrated data point
-        config = self.sims[0].engine_config
-
-        if self.sims[0].engine_type == _EngineType.GROMACS:
-            # GROMACS: dt in ps, nstdhdl is steps (dH/dlambda output frequency), convert to ns
-            # First energy is written at time 0, so no offset needed
-            time_per_energy = config.dt * config.nstdhdl / 1000
-            equil_index = int(self._equil_time / time_per_energy)
-        else:
-            # SOMD: timestep in fs, energy_frequency is steps, convert to ns
-            # First energy is only written after the first nrg_freq steps, so subtract 1
-            time_per_energy = config.timestep * config.energy_frequency / 1_000_000
-            equil_index = max(0, int(self._equil_time / time_per_energy) - 1)
+        equil_index = self.sims[0].engine_config.get_equil_index(self._equil_time)
 
         # Write the equilibrated data for each simulation
         for sim in self.sims:
-            # Set file paths based on engine type
-            if sim.engine_type == _EngineType.GROMACS:
-                in_file = sim.output_dir + "/prod/prod.xvg"
-                out_file = sim.output_dir + "/prod/prod_equilibrated.xvg"
-                header_chars = ("#", "@")
-            else:
-                in_file = sim.output_dir + "/simfile.dat"
-                out_file = sim.output_dir + "/simfile_equilibrated.dat"
-                header_chars = ("#",)
+            in_file, out_file, header_chars = (
+                sim.engine_backend.get_equilibrated_data_files(sim.output_dir)
+            )
 
             with open(in_file, "r") as ifile:
                 lines = ifile.readlines()

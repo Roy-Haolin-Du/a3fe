@@ -8,8 +8,10 @@ __all__ = [
 ]
 
 from abc import ABC as _ABC
+from abc import abstractmethod as _abstractmethod
 from typing import Dict as _Dict
 from typing import List as _List
+from typing import Optional as _Optional
 
 import yaml as _yaml
 from pydantic import BaseModel as _BaseModel
@@ -123,6 +125,19 @@ class _BaseSystemPreparationConfig(_ABC, _BaseModel):
         },
         description="The lambda values to use for each stage of each leg.",
     )
+
+    @_abstractmethod
+    def get_ensemble_equilibration_work_dir(
+        self, output_dir: str, leg_type: _LegType
+    ) -> _Optional[str]:
+        """Return the working directory for ensemble equilibration."""
+        pass
+
+    @property
+    @_abstractmethod
+    def should_save_ensemble_equilibration_coordinates(self) -> bool:
+        """Whether a3fe should save the final ensemble coordinates."""
+        pass
 
     @property
     def required_stages(self) -> _Dict[_LegType, _List[_StageType]]:
@@ -244,14 +259,38 @@ class SomdSystemPreparationConfig(_BaseSystemPreparationConfig):
     in the future.
     """
 
+    def get_ensemble_equilibration_work_dir(
+        self, output_dir: str, leg_type: _LegType
+    ) -> _Optional[str]:
+        """Return the working directory for ensemble equilibration."""
+        return output_dir if leg_type == _LegType.BOUND else None
+
+    @property
+    def should_save_ensemble_equilibration_coordinates(self) -> bool:
+        """Whether a3fe should save the final ensemble coordinates."""
+        return True
+
 
 class GromacsSystemPreparationConfig(_BaseSystemPreparationConfig):
     """
     Pydantic model for holding system preparation configuration
     for running simulations with GROMACS.
 
-    Uses lambda values selected for the GROMACS soft-core parameters.
+    The default lambda schedules are adapted from the 2 fs GROMACS production
+    settings used for the fragment optimisation ABFE benchmark:
+    https://github.com/IAlibay/fragment-opt-abfe-benchmark/tree/main/simulation_control_files/abfe_mdps/2fs.
     """
+
+    def get_ensemble_equilibration_work_dir(
+        self, output_dir: str, leg_type: _LegType
+    ) -> _Optional[str]:
+        """Return the working directory for ensemble equilibration."""
+        return output_dir
+
+    @property
+    def should_save_ensemble_equilibration_coordinates(self) -> bool:
+        """Whether a3fe should save the final ensemble coordinates."""
+        return False
 
     lambda_values: _Dict[_LegType, _Dict[_StageType, _List[float]]] = _Field(
         default={

@@ -12,13 +12,11 @@ from typing import Optional as _Optional
 from typing import Tuple as _Tuple
 
 import numpy as _np
-from sire.units import k_boltz as _k_boltz
 
 from ..configuration import EngineType as _EngineType
 from ..configuration import JobStatus as _JobStatus
 from ..configuration import SlurmConfig as _SlurmConfig
 from ..configuration import _EngineConfig
-from ..read._process_gmx_files import read_xvg_dhdl as _read_xvg_dhdl
 from ._simulation_runner import SimulationRunner as _SimulationRunner
 from ._virtual_queue import Job as _Job
 from ._virtual_queue import VirtualQueue as _VirtualQueue
@@ -27,32 +25,8 @@ from ._virtual_queue import VirtualQueue as _VirtualQueue
 class Simulation(_SimulationRunner):
     """Class to store information about a single simulation."""
 
-    required_input_files = {
-        _EngineType.SOMD: [
-            "somd.prm7",
-            "somd.rst7",
-            "somd.pert",
-        ],
-        _EngineType.GROMACS: [
-            "gromacs.top",
-            "gromacs.gro",
-        ],
-    }
-
     # Files to be cleaned by self.clean()
-    run_files = _SimulationRunner.run_files + [
-        "*.dcd",
-        "*.out",
-        "moves.dat",
-        "simfile.dat",
-        "simfile_equilibrated.dat",
-        "*.s3",
-        "*.s3.previous",
-        "latest.pdb",
-        "gradients.dat",
-        "equilibration_block_gradient.txt",
-        "equilibration_shrinking_block_gradient",
-    ]
+    run_files = _SimulationRunner.run_files + ["*.out"]
 
     def __init__(
         self,
@@ -187,16 +161,11 @@ class Simulation(_SimulationRunner):
                 # Move log files and checkpoint files so that the job does not restart
                 _subprocess.run(["mkdir", "-p", f"{self.output_dir}/failure"])
 
-                if self.engine_type == _EngineType.GROMACS:
-                    # Move GROMACS checkpoint files
-                    for cpt_file in _glob.glob(
-                        f"{self.output_dir}/**/*.cpt", recursive=True
-                    ):
-                        _subprocess.run(["mv", cpt_file, f"{self.output_dir}/failure"])
-                else:  # SOMD
-                    # Move SOMD s3 files
-                    for s3_file in _glob.glob(f"{self.output_dir}/*.s3"):
-                        _subprocess.run(["mv", s3_file, f"{self.output_dir}/failure"])
+                restart_file_pattern = _os.path.join(
+                    self.output_dir, self.engine_backend.restart_file_pattern
+                )
+                for restart_file in _glob.glob(restart_file_pattern, recursive=True):
+                    _subprocess.run(["mv", restart_file, f"{self.output_dir}/failure"])
 
                 _subprocess.run(
                     ["mv", old_job.slurm_outfile, f"{self.output_dir}/failure"]
@@ -220,20 +189,15 @@ class Simulation(_SimulationRunner):
             raise FileNotFoundError("Input directory does not exist.")
 
         # Check that the required input files are present
-        for file in Simulation.required_input_files[self.engine_type]:
+        for file in self.engine_backend.required_input_files:
             if not _os.path.isfile(_os.path.join(self.input_dir, file)):
                 raise FileNotFoundError("Required input file " + file + " not found.")
 
     def _select_input_files(self) -> None:
         """Select the coordinate and restraint files for this run."""
-        if self.engine_type == _EngineType.SOMD:
-            file_prefix = "somd"
-            file_extension = "rst7"
-        elif self.engine_type == _EngineType.GROMACS:
-            file_prefix = "gromacs"
-            file_extension = "gro"
-        else:
-            raise ValueError(f"Engine type {self.engine_type} not supported")
+        file_prefix, file_extension = (
+            self.engine_backend.coordinate_prefix_and_extension
+        )
 
         coordinate_files = _glob.glob(f"{self.input_dir}/*.{file_extension}")
         if len(coordinate_files) == 0:
@@ -296,22 +260,12 @@ class Simulation(_SimulationRunner):
         -------
         None
         """
-        # Write updated config to file
-        if self.engine_type == _EngineType.SOMD:
-            self.engine_config.write_config(
-                run_dir=self.output_dir,
-                lambda_val=self.lam,
-                runtime=runtime,
-                top_file="somd.prm7",
-                coord_file="somd.rst7",
-                morph_file="somd.pert",
-            )
-        else:  # GROMACS
-            self.engine_config.write_all_stage_configs(
-                run_dir=self.output_dir,
-                lambda_val=self.lam,
-                runtime=runtime,
-            )
+        self.engine_backend.write_run_config(
+            config=self.engine_config,
+            output_dir=self.output_dir,
+            lam=self.lam,
+            runtime=runtime,
+        )
 
         # Get the commands to run the simulation
         cmd = self.engine_config.get_run_cmd(self.lam)
@@ -325,90 +279,12 @@ class Simulation(_SimulationRunner):
         self._logger.info(f"Submitted with job {self.job}")
 
     def get_tot_simtime(self) -> float:
-        """
-        Get the total simulation time in ns
-
-        Returns
-        -------
-        tot_simtime : float
-            Total simulation time in ns.
-        """
-        if self.engine_type == _EngineType.GROMACS:
-            data_file = f"{self.output_dir}/prod/prod.xvg"
-            if (
-                not _pathlib.Path(data_file).is_file()
-                or _os.stat(data_file).st_size == 0
-            ):
-                return 0
-
-            last_line = (
-                _subprocess.check_output(["tail", "-1", data_file])
-                .decode("utf-8")
-                .strip()
-            )
-            if not last_line or last_line.startswith(("#", "@", "&")):
-                return 0
-            return float(last_line.split()[0]) / 1000.0
-        else:  # SOMD
-            data_simfile = f"{self.output_dir}/simfile.dat"
-            if not _pathlib.Path(data_simfile).is_file():
-                return 0
-            elif _os.stat(data_simfile).st_size == 0:
-                return 0
-            else:
-                step = int(
-                    _subprocess.check_output(
-                        ["tail", "-1", f"{self.output_dir}/simfile.dat"]
-                    )
-                    .decode("utf-8")
-                    .strip()
-                    .split()[0]
-                )
-                return step * (self.engine_config.timestep / 1_000_000)  # ns
+        """Get the total simulation time in ns."""
+        return self.engine_backend.get_tot_simtime(self.output_dir, self.engine_config)
 
     def get_tot_gpu_time(self) -> float:
-        """
-        Get the total simulation time in GPU hours
-
-        Returns
-        -------
-        tot_gpu_time : float
-            Total simulation time in GPU hours.
-        """
-        # Get output files
-        slurm_output_files = self.slurm_output_files
-
-        # If we don't have any output files, we haven't run any simulations
-        if len(slurm_output_files) == 0:
-            return 0
-
-        # Otherwise, add up the simulation time in seconds
-        tot_gpu_time = 0
-
-        if self.engine_type == _EngineType.GROMACS:
-            # GROMACS: look for "Time:" in performance summary
-            # Format: "       Time:     2496.669      156.055     1599.9"
-            # We want the Wall time (second number, in seconds)
-            for file in slurm_output_files:
-                with open(file, "rt") as f:
-                    for line in f.readlines():
-                        if line.strip().startswith("Time:"):
-                            try:
-                                parts = line.split()
-                                wall_time = float(parts[2])  # Wall time in seconds
-                                tot_gpu_time += wall_time
-                            except (IndexError, ValueError):
-                                continue
-        else:  # SOMD
-            # SOMD: look for "Simulation took"
-            for file in slurm_output_files:
-                with open(file, "rt") as f:
-                    for line in f.readlines():
-                        if line.startswith("Simulation took"):
-                            tot_gpu_time += float(line.split(" ")[2])
-
-        # And convert to GPU hours
-        return tot_gpu_time / 3600
+        """Get the total simulation time in GPU hours."""
+        return self.engine_backend.get_tot_gpu_time(self.slurm_output_files)
 
     @property
     def tot_simtime(self) -> float:
@@ -423,50 +299,12 @@ class Simulation(_SimulationRunner):
 
     @property
     def failed(self) -> bool:
-        """Whether the simulation has failed"""
-        # Check if we are still running
-        if self.running:
+        """Whether the simulation has failed."""
+        if self.running or self.job is None:
             return False
-
-        if self.job is None:
-            return False
-
-        if self.engine_type == _EngineType.GROMACS:
-            return not self._gromacs_run_completed()
-
-        # We are not running, so all slurm output files should contain the
-        # "Simulation took" line
-        if self.slurm_output_files:
-            for file in self.slurm_output_files:
-                if not self._somd_run_completed(file):
-                    return True
-
-        return False
-
-    def _somd_run_completed(self, slurm_file: str) -> bool:
-        """Return whether a SOMD simulation completed successfully.
-
-        Parameters
-        ----------
-        slurm_file : str
-            Path to the SLURM output file.
-
-        Returns
-        -------
-        bool
-            Whether the simulation completed successfully.
-        """
-        with open(slurm_file, "rt") as f:
-            return "Simulation took" in f.read()
-
-    def _gromacs_run_completed(self) -> bool:
-        """Return whether GROMACS production completed successfully."""
-        prod_log = _pathlib.Path(self.output_dir, "prod", "prod.log")
-        if not prod_log.is_file():
-            return False
-
-        with open(prod_log, "rt") as f:
-            return "Performance:" in f.read()
+        return not self.engine_backend.run_completed(
+            self.output_dir, self.slurm_output_files
+        )
 
     @property
     def slurm_output_files(self) -> _List[str]:
@@ -482,135 +320,23 @@ class Simulation(_SimulationRunner):
             self.virtual_queue.kill(self.job)
 
     def lighten(self) -> None:
-        """Lighten the simulation by deleting all restart
-        and trajectory files."""
-        if self.engine_type == _EngineType.GROMACS:
-            patterns = ["*.xtc", "*.trr", "*.cpt", "*_equilibrated.xvg"]
-            use_recursive = True
-        else:  # SOMD
-            patterns = [
-                "*.dcd",
-                "*.s3",
-                "*.s3.previous",
-                "gradients.s3",
-                "simfile_equilibrated.dat",
-                "latest.pdb",
-            ]
-            use_recursive = False
-
+        """Lighten the simulation by deleting restart and trajectory files."""
         for directory in [self.base_dir, self.output_dir]:
-            for pattern in patterns:
-                glob_func = (
-                    _pathlib.Path(directory).rglob
-                    if use_recursive
-                    else _pathlib.Path(directory).glob
-                )
-                for file in glob_func(pattern):
+            for pattern in self.engine_backend.lighten_file_patterns:
+                for file in _pathlib.Path(directory).glob(pattern):
                     self._logger.info(f"Deleting {file}")
                     _subprocess.run(["rm", str(file)])
 
     def read_gradients(
         self, equilibrated_only: bool = False, endstate: bool = False
     ) -> _Tuple[_np.ndarray, _np.ndarray]:
-        """
-        Read the gradients from the output file. These can be either the infinitesimal gradients
-        at the given value of lambda, or the differences in energy between the end state
-        Hamiltonians.
-
-        Parameters
-        ----------
-        equilibrated_only : bool, Optional, default: False
-            Whether to read the gradients from the equilibrated region of the simulation (True)
-            or the whole simulation (False).
-        endstate : bool, Optional, default: False
-            Whether to return the difference in energy between the end state Hamiltonians (True)
-            or the infinitesimal gradients at the given value of lambda (False).
-
-        Returns
-        -------
-        times : np.ndarray
-            Array of times, in ns.
-        grads : np.ndarray
-            Array of gradients, in kcal/mol.
-        """
-        if self.engine_type == _EngineType.GROMACS:
-            filename = (
-                "prod/prod_equilibrated.xvg" if equilibrated_only else "prod/prod.xvg"
-            )
-            times, data = _read_xvg_dhdl(_os.path.join(self.output_dir, filename))
-
-            if endstate:
-                final_state_column = 3 + len(self.engine_config.lambda_values)
-                grads = data[:, final_state_column] - data[:, 4]
-            else:
-                lambda_arrays = [
-                    self.engine_config.coul_lambdas,
-                    self.engine_config.vdw_lambdas,
-                    self.engine_config.bonded_lambdas,
-                ]
-                gradient_columns = [
-                    i
-                    for i, lambda_array in enumerate(lambda_arrays, start=1)
-                    if lambda_array is not None and len(set(lambda_array)) > 1
-                ]
-                if len(gradient_columns) != 1:
-                    raise ValueError(
-                        "Expected exactly one varying GROMACS lambda component."
-                    )
-                grads = data[:, gradient_columns[0]]
-
-            return times / 1000.0, grads / 4.184
-
-        # SOMD: read simfile.dat
-        if equilibrated_only:
-            with open(
-                _os.path.join(self.output_dir, "simfile_equilibrated.dat"), "r"
-            ) as ifile:
-                lines = ifile.readlines()
-        else:
-            with open(_os.path.join(self.output_dir, "simfile.dat"), "r") as ifile:
-                lines = ifile.readlines()
-
-        steps = []
-        grads = []
-        temp = None  # Temperature in K
-
-        for line in lines:
-            vals = line.split()
-            # Get the temperature, checking the units
-            if line.startswith("#Generating temperature is"):
-                temp = vals[3]
-                try:
-                    unit = vals[4]
-                except IndexError:
-                    # Must be °C
-                    temp, unit = temp.split("°")
-                if unit == "C":
-                    temp = float(temp) + 273.15  # Convert to K
-                else:
-                    temp = float(temp)
-            # Get the gradients
-            if not line.startswith("#"):
-                step = int(vals[0].strip())
-                if not endstate:  #  Return the infinitesimal gradients
-                    grad = float(vals[2].strip())
-                else:  # Return the difference in energy between the end state Hamiltonians
-                    energy_start = float(vals[5].strip())
-                    energy_end = float(vals[-1].strip())
-                    grad = energy_end - energy_start
-                steps.append(step)
-                grads.append(grad)
-
-        times = [
-            x * (self.engine_config.timestep / 1_000_000) for x in steps
-        ]  # Timestep already in ns
-
-        times_arr = _np.array(times)
-        grads_arr = _np.array(grads)
-        # convert gradients to kcal/mol by dividing by beta
-        grads_arr *= temp * _k_boltz.value()
-
-        return times_arr, grads_arr
+        """Read simulation times in ns and gradients in kcal/mol."""
+        return self.engine_backend.read_gradients(
+            output_dir=self.output_dir,
+            config=self.engine_config,
+            equilibrated_only=equilibrated_only,
+            endstate=endstate,
+        )
 
     def update_paths(self, old_sub_path: str, new_sub_path: str) -> None:
         """

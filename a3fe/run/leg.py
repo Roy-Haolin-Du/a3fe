@@ -18,9 +18,6 @@ from typing import Tuple as _Tuple
 import BioSimSpace.Sandpit.Exscientia as _BSS
 import numpy as _np
 import pandas as _pd
-from BioSimSpace.Sandpit.Exscientia.Align._alch_ion import (
-    _mark_alchemical_ion,
-)
 
 from ..analyse.plot import plot_convergence as _plot_convergence
 from ..analyse.plot import plot_rmsds as _plot_rmsds
@@ -31,6 +28,7 @@ from ..configuration import PreparationStage as _PreparationStage
 from ..configuration import SlurmConfig as _SlurmConfig
 from ..configuration import StageType as _StageType
 from ..configuration import _BaseSystemPreparationConfig, _EngineConfig
+from ..engines import CONFIG_FILE_SUFFIXES as _CONFIG_FILE_SUFFIXES
 from . import system_prep as _system_prep
 from ._restraint import A3feRestraint as _A3feRestraint
 from ._simulation_runner import SimulationRunner as _SimulationRunner
@@ -38,44 +36,6 @@ from ._utils import get_single_mol as _get_single_mol
 from ._virtual_queue import Job as _Job
 from ._virtual_queue import VirtualQueue as _VirtualQueue
 from .stage import Stage as _Stage
-
-
-def _add_gromacs_alchemical_ions(
-    system: _BSS._SireWrappers._system.System,  # type: ignore
-    ligand: _BSS._SireWrappers._molecule.Molecule,  # type: ignore
-    ligand_charge: int,
-) -> None:
-    """Make existing counterions co-alchemical for a GROMACS decoupling."""
-    ion_charge = -1 if ligand_charge > 0 else 1
-    ions = [
-        mol
-        for mol in system
-        if mol.nAtoms() == 1 and round(mol.charge().value()) == ion_charge
-    ]
-    if len(ions) < abs(ligand_charge):
-        raise ValueError(
-            f"Could not find {abs(ligand_charge)} monovalent counterion(s) "
-            "for the charged ligand."
-        )
-
-    space = system._sire_object.property("space")
-    ligand_centre = ligand.getAtoms()[ligand.getCOMIdx()]._sire_object.property(
-        "coordinates"
-    )
-    ions.sort(
-        key=lambda ion: space.calc_dist(
-            ion.getAtoms()[0]._sire_object.property("coordinates"), ligand_centre
-        ),
-        reverse=True,
-    )
-
-    for ion in ions[: abs(ligand_charge)]:
-        perturbed_ion = _BSS.Align.merge(ion, ion, mapping={0: 0})
-        cursor = perturbed_ion._sire_object.cursor()
-        charge = perturbed_ion.getAtoms()[0]._sire_object.property("charge1")
-        cursor[0]["charge1"] = 0 * charge
-        perturbed_ion._sire_object = cursor.commit()
-        system.updateMolecule(system.getIndex(ion), _mark_alchemical_ion(perturbed_ion))
 
 
 class Leg(_SimulationRunner):
@@ -508,12 +468,7 @@ class Leg(_SimulationRunner):
 
     def _ensemble_equilibration_output_files(self) -> _List[str]:
         """Return the files expected from ensemble equilibration."""
-        if self.engine_type == _EngineType.GROMACS:
-            files = ["gromacs.gro"]
-            if self.leg_type == _LegType.BOUND:
-                files.append("gromacs.xtc")
-            return files
-        return ["somd.rst7"]
+        return self.engine_backend.ensemble_equilibration_output_files(self.leg_type)
 
     def run_ensemble_equilibration(
         self,
@@ -599,9 +554,7 @@ class Leg(_SimulationRunner):
 
         # Give the output files unique names
         coordinate_prefix, coordinate_extension = (
-            ("gromacs", "gro")
-            if self.engine_type == _EngineType.GROMACS
-            else ("somd", "rst7")
+            self.engine_backend.coordinate_prefix_and_extension
         )
         equil_numbers = [int(outdir.split("_")[-1]) for outdir in outdirs_to_run]
         for equil_number, outdir in zip(equil_numbers, outdirs_to_run):
@@ -656,9 +609,7 @@ class Leg(_SimulationRunner):
 
                 # Save the restraints to a text file and store within the Leg object
                 with open(f"{outdir}/restraint_{i + 1}.txt", "w") as f:
-                    run_engine = (
-                        "GROMACS" if self.engine_type == _EngineType.GROMACS else "SOMD"
-                    )
+                    run_engine = self.engine_backend.run_engine
                     f.write(restraint.toString(engine=run_engine))  # type: ignore
                 self.restraints.append(restraint)
 
@@ -697,8 +648,9 @@ class Leg(_SimulationRunner):
                 f"The ligand has a charge of {lig_charge}. Using co-alchemical ion approach to maintain neutrality. "
                 "Please note: The cutoff type should be PME and the cutoff length can be adjusted to other values, e.g., 10 Å."
             )
-            if self.engine_type == _EngineType.GROMACS:
-                _add_gromacs_alchemical_ions(pre_equilibrated_system, lig, lig_charge)
+            self.engine_backend.add_alchemical_ions(
+                pre_equilibrated_system, lig, lig_charge
+            )
         # Figure out where the ligand is in the system
         perturbed_resnum = pre_equilibrated_system.getIndex(lig) + 1
 
@@ -714,11 +666,7 @@ class Leg(_SimulationRunner):
                 f"Setting up {self.leg_type.name} leg {stage_type.name} stage"
             )
             restraint = self.restraints[0] if self.leg_type == _LegType.BOUND else None
-            perturbation_type = (
-                "full"
-                if self.engine_type == _EngineType.GROMACS
-                else stage_type.bss_perturbation_type
-            )
+            perturbation_type = self.engine_backend.perturbation_type(stage_type)
             protocol = _BSS.Protocol.FreeEnergy(
                 runtime=dummy_runtime * _BSS.Units.Time.nanosecond,  # type: ignore
                 lam_vals=dummy_lam_vals,
@@ -726,9 +674,7 @@ class Leg(_SimulationRunner):
             )
             self._logger.info(f"Perturbation type: {perturbation_type}")
             # Remove velocities to avoid RST7 file writing issues, as before
-            run_engine = (
-                "gromacs" if self.engine_type == _EngineType.GROMACS else "somd"
-            )
+            run_engine = self.engine_backend.run_engine.lower()
             _BSS.FreeEnergy.AlchemicalFreeEnergy(
                 pre_equilibrated_system,
                 protocol,
@@ -736,9 +682,7 @@ class Leg(_SimulationRunner):
                 restraint=restraint,
                 work_dir=stage_input_dir,
                 setup_only=True,
-                ignore_warnings=(
-                    self.engine_type == _EngineType.GROMACS and lig_charge != 0
-                ),
+                ignore_warnings=self.engine_backend.ignore_setup_warnings(lig_charge),
                 property_map={"velocity": "foo"},
             )  # We will run outside of BSS
 
@@ -746,7 +690,7 @@ class Leg(_SimulationRunner):
             files = [
                 file
                 for file in _glob.glob(f"{stage_input_dir}/lambda_*/*")
-                if not file.endswith((".cfg", ".mdp", ".tpr"))
+                if not file.endswith(_CONFIG_FILE_SUFFIXES)
             ]
             for file in files:
                 _shutil.copy(file, stage_input_dir)
@@ -755,15 +699,12 @@ class Leg(_SimulationRunner):
 
             # Create a separate config for this stage
             stage_config = self.engine_config.copy()
-            if self.engine_type == _EngineType.GROMACS and lig_charge != 0:
-                stage_config.refcoord_scaling = "com"
+            stage_config.set_ligand_charge(lig_charge)
 
             # Copy the final coordinates from the ensemble equilibration stage to the stage input directory
             # and, if this is the bound stage, read in the restraints
             coordinate_prefix, coordinate_extension = (
-                ("somd", "rst7")
-                if self.engine_type == _EngineType.SOMD
-                else ("gromacs", "gro")
+                self.engine_backend.coordinate_prefix_and_extension
             )
             for i in range(self.ensemble_size):
                 ens_equil_output_dir = f"{self.base_dir}/ensemble_equilibration_{i + 1}"
@@ -774,21 +715,9 @@ class Leg(_SimulationRunner):
                 )
 
                 if self.leg_type == _LegType.BOUND:
-                    if self.engine_type == _EngineType.SOMD:
-                        with open(
-                            f"{ens_equil_output_dir}/restraint_{i + 1}.txt", "r"
-                        ) as f:
-                            lines = f.readlines()
-                            restraint_type, restraint_dict = [
-                                item.strip() for item in lines[0].split("=")
-                            ]
-
-                        if restraint_type != "boresch restraints dictionary":
-                            raise ValueError(
-                                f"Only Boresch restraints are supported. Found {restraint_type} restraints."
-                            )
-
-                        stage_config.boresch_restraints_dictionary = restraint_dict
+                    stage_config.load_boresch_restraints(
+                        f"{ens_equil_output_dir}/restraint_{i + 1}.txt"
+                    )
 
             # Set configuration options
             stage_config.perturbed_residue_number = perturbed_resnum
@@ -796,9 +725,6 @@ class Leg(_SimulationRunner):
             stage_config.turn_on_receptor_ligand_restraints = (
                 self.leg_type == _LegType.BOUND and stage_type == _StageType.RESTRAIN
             )
-            stage_config.ligand_charge = (
-                -lig_charge
-            )  # Use co-alchemical ion approach when there is a charge difference
             stage_config.lambda_values = sys_prep_config.lambda_values[self.leg_type][
                 stage_type
             ]

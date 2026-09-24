@@ -99,6 +99,26 @@ class _EngineConfig(_BaseModel, _ABC):
         """Set up engine-specific lambda arrays if required."""
         pass
 
+    @_abstractmethod
+    def get_equil_index(self, equil_time: float) -> int:
+        """Return the index of the first equilibrated energy value."""
+        pass
+
+    @property
+    @_abstractmethod
+    def analysis_temperature(self) -> float:
+        """Return the analysis temperature in Kelvin."""
+        pass
+
+    @_abstractmethod
+    def set_ligand_charge(self, ligand_charge: int) -> None:
+        """Configure the engine for the ligand net charge."""
+        pass
+
+    def load_boresch_restraints(self, restraint_file: str) -> None:
+        """Load engine-specific Boresch restraint configuration."""
+        pass
+
 
 class SomdConfig(_EngineConfig):
     """
@@ -202,7 +222,10 @@ class SomdConfig(_EngineConfig):
     )
     ligand_charge: int = _Field(
         0,
-        description="Charge change for the alchemical transformation. If non-zero, PME must be used.",
+        description=(
+            "Ligand charge change on decoupling (decoupled minus fully interacting). "
+            "If non-zero, PME must be used."
+        ),
     )
 
     boresch_restraints_dictionary: _Optional[str] = _Field(
@@ -238,6 +261,33 @@ class SomdConfig(_EngineConfig):
         nmoves = round(float(runtime_fs) / float(timestep))
 
         return nmoves
+
+    def get_equil_index(self, equil_time: float) -> int:
+        """Return the index of the first equilibrated energy value."""
+        time_per_energy = self.timestep * self.energy_frequency / 1_000_000
+        return max(0, int(equil_time / time_per_energy) - 1)
+
+    @property
+    def analysis_temperature(self) -> float:
+        """Return the analysis temperature in Kelvin."""
+        return self.temperature + 273.15
+
+    def set_ligand_charge(self, ligand_charge: int) -> None:
+        """Set the ligand charge change used by SOMD."""
+        self.ligand_charge = -ligand_charge
+
+    def load_boresch_restraints(self, restraint_file: str) -> None:
+        """Load a SOMD Boresch restraint dictionary."""
+        with open(restraint_file, "r") as f:
+            restraint_type, restraint_dict = [
+                item.strip() for item in f.readline().split("=")
+            ]
+
+        if restraint_type != "boresch restraints dictionary":
+            raise ValueError(
+                f"Only Boresch restraints are supported. Found {restraint_type} restraints."
+            )
+        self.boresch_restraints_dictionary = restraint_dict
 
     @_model_validator(mode="after")
     def _check_rf_dielectric(self):
@@ -439,7 +489,10 @@ class SomdConfig(_EngineConfig):
 class GromacsConfig(_EngineConfig):
     """
     Pydantic model for holding GROMACS engine configuration.
-    Based on the fragment-opt-abfe-benchmark MDP format.
+
+    The default settings are adapted from the 2 fs GROMACS production MDP
+    files used for the fragment optimisation ABFE benchmark:
+    https://github.com/IAlibay/fragment-opt-abfe-benchmark/tree/main/simulation_control_files/abfe_mdps/2fs.
     """
 
     ### Simulation Type ###
@@ -567,7 +620,10 @@ class GromacsConfig(_EngineConfig):
 
     ligand_charge: int = _Field(
         0,
-        description="Charge change for the alchemical transformation.",
+        description=(
+            "Ligand charge change on decoupling (decoupled minus fully interacting). "
+            "If non-zero, PME must be used."
+        ),
     )
 
     free_energy: _Literal["yes", "no"] = _Field("yes", description="Enable FEP")
@@ -629,6 +685,22 @@ class GromacsConfig(_EngineConfig):
     def timestep(self) -> float:
         """Return timestep in femtoseconds for compatibility with SomdConfig."""
         return self.dt * 1000.0  # ps to fs
+
+    def get_equil_index(self, equil_time: float) -> int:
+        """Return the index of the first equilibrated energy value."""
+        time_per_energy = self.dt * self.nstdhdl / 1000
+        return int(equil_time / time_per_energy)
+
+    @property
+    def analysis_temperature(self) -> float:
+        """Return the analysis temperature in Kelvin."""
+        return self.ref_t
+
+    def set_ligand_charge(self, ligand_charge: int) -> None:
+        """Set the ligand charge change used by GROMACS."""
+        self.ligand_charge = -ligand_charge
+        if ligand_charge != 0:
+            self.refcoord_scaling = "com"
 
     @_model_validator(mode="after")
     def _check_ligand_charge(self):

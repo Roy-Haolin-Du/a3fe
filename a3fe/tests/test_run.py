@@ -344,6 +344,39 @@ def test_add_gromacs_alchemical_ions(charged_sys):
     assert ion.property("charge1").value() == pytest.approx(0)
 
 
+@pytest.mark.parametrize(
+    "stage_type, expected_gradients",
+    [
+        (a3.StageType.DISCHARGE, [1.0, 4.0]),
+        (a3.StageType.VANISH, [2.0, 5.0]),
+        (a3.StageType.RESTRAIN, [3.0, 6.0]),
+    ],
+)
+def test_gromacs_gradient_columns(stage_type, expected_gradients):
+    """Test that each GROMACS stage reads the corresponding gradient column."""
+    with TemporaryDirectory() as dirname:
+        prod_dir = pathlib.Path(dirname, "prod")
+        prod_dir.mkdir()
+        with open(prod_dir / "prod.xvg", "w") as f:
+            f.write("# time, energy, Coulomb, van der Waals, bonded, and delta H\n")
+            f.write("0.0 100.0 4.184 8.368 12.552 0.0 0.0\n")
+            f.write("200.0 200.0 16.736 20.920 25.104 0.0 0.0\n")
+
+        config = a3.GromacsConfig(lambda_values=[0.0, 1.0])
+        config.setup_lambda_arrays(stage_type)
+        times, gradients = _engine_backend_registry[
+            a3.EngineType.GROMACS
+        ].read_gradients(
+            output_dir=dirname,
+            config=config,
+            equilibrated_only=False,
+            endstate=False,
+        )
+
+        assert np.allclose(times, [0.0, 0.2])
+        assert np.allclose(gradients, expected_gradients)
+
+
 class TestCalcSetup:
     """
     Test the setup of a calculation and all sub-simulation runners.

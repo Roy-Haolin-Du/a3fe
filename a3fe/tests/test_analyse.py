@@ -193,8 +193,8 @@ def test_analysis_all_runs(restrain_stage):
 def test_analysis_all_runs_gromacs(gromacs_discharge_stage):
     """Check that the GROMACS analysis works on all runs."""
     res, err = gromacs_discharge_stage.analyse()
-    # The mean should agree with the 20--100 ps GROMACS BAR reference.
-    assert res.mean() == pytest.approx(168.9124, abs=0.1)
+    # Each run should agree with the independent 20--100 ps GROMACS BAR results.
+    assert np.allclose(res, [169.1505, 168.6743], atol=0.1)
     assert err.mean() == pytest.approx(0.6047, abs=1e-3)
 
 

@@ -136,8 +136,8 @@ class GradientData:
         # Get the statistical inefficiencies in units of simulation time
         stat_ineffs_all_winds = (
             _np.array(stat_ineffs_all_winds)
-            * lam_winds[0].sims[0].engine_config.timestep
-        )  # Timestep should be same for all sims
+            * lam_winds[0].sims[0].engine_config.gradient_output_interval
+        )  # Output interval should be same for all sims
 
         # Get the SEMs of the free energy changes from the inter-run SEMs of the gradients
         lam_weights = _np.array([lam.lam_val_weight for lam in lam_winds])

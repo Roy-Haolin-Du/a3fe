@@ -106,6 +106,12 @@ class _EngineConfig(_BaseModel, _ABC):
 
     @property
     @_abstractmethod
+    def gradient_output_interval(self) -> float:
+        """Return the time between gradient samples in ns."""
+        pass
+
+    @property
+    @_abstractmethod
     def analysis_temperature(self) -> float:
         """Return the analysis temperature in Kelvin."""
         pass
@@ -264,8 +270,12 @@ class SomdConfig(_EngineConfig):
 
     def get_equil_index(self, equil_time: float) -> int:
         """Return the index of the first equilibrated energy value."""
-        time_per_energy = self.timestep * self.energy_frequency / 1_000_000
-        return max(0, int(equil_time / time_per_energy) - 1)
+        return max(0, int(equil_time / self.gradient_output_interval) - 1)
+
+    @property
+    def gradient_output_interval(self) -> float:
+        """Return the time between gradient samples in ns."""
+        return self.timestep * self.energy_frequency / 1_000_000
 
     @property
     def analysis_temperature(self) -> float:
@@ -688,8 +698,12 @@ class GromacsConfig(_EngineConfig):
 
     def get_equil_index(self, equil_time: float) -> int:
         """Return the index of the first equilibrated energy value."""
-        time_per_energy = self.dt * self.nstdhdl / 1000
-        return int(equil_time / time_per_energy)
+        return int(equil_time / self.gradient_output_interval)
+
+    @property
+    def gradient_output_interval(self) -> float:
+        """Return the time between gradient samples in ns."""
+        return self.dt * self.nstdhdl / 1000
 
     @property
     def analysis_temperature(self) -> float:

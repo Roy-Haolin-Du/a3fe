@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import pytest
 from pydantic import ValidationError
 
-from a3fe.configuration import GromacsConfig
+from a3fe.configuration import GromacsConfig, SomdConfig
 
 
 def test_config_yaml_save_and_load(engine_config):
@@ -16,6 +16,16 @@ def test_config_yaml_save_and_load(engine_config):
         config.dump(dirname)
         config2 = engine_config.load(dirname)
         assert config.runtime == config2.runtime
+
+
+def test_gradient_output_interval():
+    """Test conversion of engine output frequencies to ns."""
+    assert SomdConfig(timestep=4, energy_frequency=200).gradient_output_interval == (
+        pytest.approx(0.0008)
+    )
+    assert GromacsConfig(dt=0.002, nstdhdl=100).gradient_output_interval == (
+        pytest.approx(0.0002)
+    )
 
 
 def test_write_config_somd(engine_config):
